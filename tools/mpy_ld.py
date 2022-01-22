@@ -38,6 +38,8 @@ import makeqstrdata as qstrutil
 MPY_VERSION = 5
 MP_NATIVE_ARCH_X86 = 1
 MP_NATIVE_ARCH_X64 = 2
+MP_NATIVE_ARCH_ARMV6 = 3
+MP_NATIVE_ARCH_ARMV6M = 4
 MP_NATIVE_ARCH_ARMV7M = 5
 MP_NATIVE_ARCH_ARMV7EMSP = 7
 MP_NATIVE_ARCH_ARMV7EMDP = 8
@@ -131,6 +133,22 @@ ARCH_DATA = {
         (R_X86_64_GOTPCREL, R_X86_64_REX_GOTPCRELX),
         asm_jump_x86,
     ),
+    "armv6": ArchData(
+        "EM_ARM",
+        MP_NATIVE_ARCH_ARMV6M << 2 | MICROPY_PY_BUILTINS_STR_UNICODE,
+        2,
+        4,
+        (R_ARM_GOT_BREL,),
+        asm_jump_arm,
+    ),     
+    "armv6m": ArchData(
+        "EM_ARM",
+        MP_NATIVE_ARCH_ARMV6M << 2 | MICROPY_PY_BUILTINS_STR_UNICODE,
+        2,
+        4,
+        (R_ARM_GOT_BREL,),
+        asm_jump_arm,
+    ),    
     "armv7m": ArchData(
         "EM_ARM",
         MP_NATIVE_ARCH_ARMV7M << 2 | MICROPY_PY_BUILTINS_STR_UNICODE,
