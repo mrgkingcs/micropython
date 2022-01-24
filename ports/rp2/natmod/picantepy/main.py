@@ -68,9 +68,7 @@ def test():
 
     start = ticks_ms()
 
-    numFrames = 100
-
-    for frame in range(0,numFrames):
+    while True:
         #print("Frame:",frameNum)
         clear232(renderBuffer, 0b00000000)
         
@@ -98,7 +96,7 @@ def test():
 
     end = ticks_ms()
     count = end-start
-    print(numFrames, "frames in",(count),"ms =",(numFrames*1000/count),"fps")
+    print("100 frames in",(count),"ms =",(100000/count),"fps")
 
     display.cleanup()
 
