@@ -31,6 +31,7 @@ def init(sck, mosi, dc, cs, rst, rotation):
     global spi, display
     spi = SPI(0, baudrate=65000000, sck=Pin(sck), mosi=Pin(mosi))
     display = Display(spi, dc=Pin(dc), cs=Pin(cs), rst=Pin(rst), rotation=rotation, width=SCREEN_WIDTH, height=SCREEN_HEIGHT)
+    picante_c.init()
 
 ####################################################################################
 #
@@ -54,7 +55,7 @@ def cleanup():
 #
 ####################################################################################
 def clear(colour565 = 0):
-    picante_c.clear232(renderBuffer, colour565);
+    picante_c.clear565(colour565)
 
 ####################################################################################
 #
@@ -93,6 +94,7 @@ def blit32(bitmap, x, y, palette):
 ####################################################################################
 def draw():
     for stripeIdx in range(0, NUM_STRIPES):
-        #picante_c.renderStripe(stripeIdx, displayStripe)
-        picante_c.encode(renderBuffer, displayStripe, stripeIdx*SCREEN_WIDTH*STRIPE_HEIGHT)
+        #print("Rendering stripe",stripeIdx)
+        picante_c.renderStripe(stripeIdx, displayStripe)
         display.block(0, stripeIdx*STRIPE_HEIGHT, 319, (stripeIdx+1)*STRIPE_HEIGHT-1, displayStripe)
+    picante_c.clearCmdQueue()
