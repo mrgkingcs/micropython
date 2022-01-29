@@ -28,11 +28,12 @@ from ili9341 import Display, color565
 from machine import Pin, SPI
 
 from random import randint
-from picante import encode, clear232, blit32
+#from picante import encode, clear232, blit32
+import picante
 import micropython
 from time import ticks_ms
 
-from ballSprite import ballSprite
+from ballsprite import ballsprite
 
 SCR_WIDTH=320
 SCR_HEIGHT=240
@@ -49,14 +50,16 @@ for count in range(0,32*32):
 
 def test():
     """Test code."""
-    spi = SPI(0, baudrate=65000000, sck=Pin(2), mosi=Pin(3))
-    display = Display(spi, dc=Pin(7), cs=Pin(5), rst=Pin(6), rotation=270, width=320, height=240)
+    #spi = SPI(0, baudrate=65000000, sck=Pin(2), mosi=Pin(3))
+    #display = Display(spi, dc=Pin(7), cs=Pin(5), rst=Pin(6), rotation=270, width=320, height=240)
 
-    renderBuffer = bytearray(renderBufferBytes)
+    picante.init(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
+
+    # renderBuffer = bytearray(renderBufferBytes)
     
     
-    numBytes = buffWidth*buffHeight*2
-    displayBuffer = bytearray(numBytes)
+    # numBytes = buffWidth*buffHeight*2
+    # displayBuffer = bytearray(numBytes)
     
     micropython.mem_info()
 
@@ -72,7 +75,7 @@ def test():
 
     for frame in range(0,numFrames):
         #print("Frame:",frameNum)
-        clear232(renderBuffer, 0b00000000)
+        picante.clear(0b0)
         
         posX += dirX
         if posX >= (320-32):
@@ -90,16 +93,18 @@ def test():
             posY = 0
             dirY = speed
 
-        blit32(ballSprite, (posX, posY), renderBuffer)
+        picante.blit32(ballsprite, posX, posY)
 
-        for stripeIdx in range(0, NUM_STRIPES):
-            encode(renderBuffer, displayBuffer, stripeIdx*numBytes//2)
-            display.block(0, stripeIdx*buffHeight, 319, (stripeIdx+1)*buffHeight-1, displayBuffer)
+        picante.draw()
+
+        # for stripeIdx in range(0, NUM_STRIPES):
+        #     encode(renderBuffer, displayBuffer, stripeIdx*numBytes//2)
+        #     display.block(0, stripeIdx*buffHeight, 319, (stripeIdx+1)*buffHeight-1, displayBuffer)
 
     end = ticks_ms()
     count = end-start
     print(numFrames, "frames in",(count),"ms =",(numFrames*1000/count),"fps")
 
-    display.cleanup()
+    picante.cleanup()
 
 test()

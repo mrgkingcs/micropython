@@ -3,6 +3,7 @@
 
 #include "py/objarray.h"
 
+
 STATIC mp_obj_t clear232(mp_obj_t buffer232, mp_obj_t colour232) {
     unsigned char colour = mp_obj_get_int(colour232) & 0xff;
     mp_obj_array_t* buf = MP_OBJ_TO_PTR(buffer232);
