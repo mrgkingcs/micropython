@@ -64,8 +64,27 @@ def clear(colour565 = 0):
 # x, y = the screen-position of the top-left corner of the bitmap
 #
 ####################################################################################
-def blit32(bitmap, x, y):
-    picante_c.blit32(bitmap, (x,y), renderBuffer)
+def blit32(bitmap, x, y, palette):
+    pal_8 = []
+    for idx in range(0,len(palette),2):
+        col16 = palette[idx] + (palette[idx+1]<<8)
+        r = (col16 >> 14)
+        g = (col16 >> 7) & 0x7
+        b = (col16 >> 2) & 0x3
+        col8 = r | (g << 2) | (b << 5)
+        pal_8.append(col8)
+
+    bitmap8 = bytearray()
+    for pxByte in bitmap:
+        pxA = pxByte & 0xf
+        colA = pal_8[pxA]
+        bitmap8.append(colA)
+
+        pxB = pxByte >> 4
+        colB = pal_8[pxB]
+        bitmap8.append(colB)
+
+    picante_c.blit32(bitmap8, (x,y), renderBuffer)
 
 ####################################################################################
 #

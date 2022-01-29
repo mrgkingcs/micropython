@@ -17,20 +17,42 @@ for filename in sys.argv[1:]:
         print(f"Failed to process file \"{filename}\" - must be 32x32px")
         continue
 
+    # get image bytes
     pxBytes = im.tobytes()
-
+    
+    # encode image bytes
     outPxBytes = bytearray()
 
-    for pxIndex in range(0,len(pxBytes),3):
-        a = 0
-        r = pxBytes[pxIndex] >> 6
-        g = pxBytes[pxIndex+1] >> 5
-        b = pxBytes[pxIndex+2] >> 6
-
-        outByte = r | (g<<2) | (b<<5) | (a<<7)
-
+    for pxIndex in range(0, len(pxBytes), 2):
+        outByte = (pxBytes[pxIndex] & 0xf) + ((pxBytes[pxIndex+1] & 0xf) << 4)
         outPxBytes.append(outByte)
 
+    # process colour table
+    usedColours = im.getcolors()
+    maxUsedColour = usedColours[0][1]
+    for colourEntry in usedColours:
+        if colourEntry[1] > maxUsedColour:
+            maxUsedColour = colourEntry[1]
+
+    palette = im.getpalette()[0:(maxUsedColour+1)*3]        
+    
+    # encode colour table bytes
+    outColBytes = bytearray()
+
+    for colIndex in range(0, len(palette), 3):
+        # encode as BGR565
+        r = palette[colIndex] >> 3
+        g = palette[colIndex+1] >> 2
+        b = palette[colIndex+2] >> 3
+
+        outBytes = (b) | (g << 5) | (r << 11)
+        #outBytes = (r) | (g << 5) | (b << 11)
+
+        outColBytes.append(outBytes & 0xff) 
+        outColBytes.append(outBytes >> 8) 
+
+
+    # output to .py file
     spriteName = filename.lower()[:filename.rindex('.')]
     outFileName = spriteName+".py"
 
@@ -39,12 +61,19 @@ for filename in sys.argv[1:]:
 
         outFile.write(f"{spriteName} = bytes(b\'")
         for outPxByte in outPxBytes:
-            #print(outPxByte)
             value = hex(outPxByte)[2:]
             if len(value) == 1:
                 value = "0"+value
             outFile.write("\\x"+value)
-        outFile.write("\')")
+        outFile.write("\')\n")
+
+        outFile.write(f"{spriteName}_pal = bytes(b\'")
+        for outColByte in outColBytes:
+            value = hex(outColByte)[2:]
+            if len(value) == 1:
+                value = "0"+value
+            outFile.write("\\x"+value)
+        outFile.write("\')\n")
 
         outFile.close()
     except:

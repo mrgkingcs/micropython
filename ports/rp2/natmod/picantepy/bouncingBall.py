@@ -33,7 +33,7 @@ from time import ticks_ms
 
 import picante
 
-from ballsprite import ballsprite
+from ballsprite import ballsprite, ballsprite_pal
 
 SCR_WIDTH=320
 SCR_HEIGHT=240
@@ -74,7 +74,7 @@ def test():
             posY = 0
             dirY = speed
 
-        picante.blit32(ballsprite, posX, posY)
+        picante.blit32(ballsprite, posX, posY, ballsprite_pal)
 
         picante.draw()
 
