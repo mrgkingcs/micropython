@@ -24,43 +24,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 from time import sleep
-from ili9341 import Display, color565
-from machine import Pin, SPI
+#from ili9341 import Display, color565
+#from machine import Pin, SPI
 
 from random import randint
-#from picante import encode, clear232, blit32
-import picante
 import micropython
 from time import ticks_ms
+
+import picante
 
 from ballsprite import ballsprite
 
 SCR_WIDTH=320
 SCR_HEIGHT=240
-renderBufferBytes = SCR_WIDTH*SCR_HEIGHT
-
-NUM_STRIPES = 8
-
-buffWidth = int(320)
-buffHeight = int(240/NUM_STRIPES)
-
-testSprite = bytearray()
-for count in range(0,32*32):
-    testSprite.append(0b01100000)
 
 def test():
     """Test code."""
-    #spi = SPI(0, baudrate=65000000, sck=Pin(2), mosi=Pin(3))
-    #display = Display(spi, dc=Pin(7), cs=Pin(5), rst=Pin(6), rotation=270, width=320, height=240)
 
     picante.init(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
-
-    # renderBuffer = bytearray(renderBufferBytes)
-    
-    
-    # numBytes = buffWidth*buffHeight*2
-    # displayBuffer = bytearray(numBytes)
-    
     micropython.mem_info()
 
     speed = 3
@@ -78,16 +59,16 @@ def test():
         picante.clear(0b0)
         
         posX += dirX
-        if posX >= (320-32):
-            posX = (320-32)
+        if posX >= (SCR_WIDTH-32):
+            posX = (SCR_WIDTH-32)
             dirX = -speed
         elif posX <= 0:
             posX = 0
             dirX = speed
 
         posY += dirY
-        if posY >= (240-32):
-            posY = (240-32)
+        if posY >= (SCR_HEIGHT-32):
+            posY = (SCR_HEIGHT-32)
             dirY = -speed
         elif posY <= 0:
             posY = 0
@@ -96,10 +77,6 @@ def test():
         picante.blit32(ballsprite, posX, posY)
 
         picante.draw()
-
-        # for stripeIdx in range(0, NUM_STRIPES):
-        #     encode(renderBuffer, displayBuffer, stripeIdx*numBytes//2)
-        #     display.block(0, stripeIdx*buffHeight, 319, (stripeIdx+1)*buffHeight-1, displayBuffer)
 
     end = ticks_ms()
     count = end-start
