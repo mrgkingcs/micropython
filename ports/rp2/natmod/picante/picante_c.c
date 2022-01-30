@@ -3,6 +3,8 @@
 
 #include "py/objarray.h"
 
+#include "py/nativeglue.h"
+
 #define SCREEN_WIDTH (320)
 #define SCREEN_HEIGHT (240)
 #define NUM_STRIPES (15)
@@ -78,7 +80,7 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 
 #define CMD_BUFF_SIZE (1024)
 
-uint8_t commandBuffer[CMD_BUFF_SIZE];
+uint8_t* commandBuffer[CMD_BUFF_SIZE] __attribute__ ((aligned (4)));
 uint16_t nextFree;
 
 CmdBase* stripeCmdQueueHead[NUM_STRIPES];
@@ -100,6 +102,7 @@ void resetCmdBuffer() {
 //======================================================================================================
 void* alloc(uint16_t size) {
     void* result = NULL;
+    size = (size+3) & (~3);
     if(nextFree+size < CMD_BUFF_SIZE) {
          result = (void*)(commandBuffer+nextFree);
          nextFree += size;
@@ -113,14 +116,16 @@ void* alloc(uint16_t size) {
 // Allocate a command from the buffer
 //======================================================================================================
 CmdBase* allocCmd(uint16_t opCode) {
-    return (CmdBase*)alloc(getCmdSize(opCode));
+    CmdBase* cmd = (CmdBase*)alloc(getCmdSize(opCode));
+    cmd->opcode = opCode;
+    return cmd;
 } 
 
 //======================================================================================================
 // Enqueue a command for the given stripe
 //======================================================================================================
 void enqueueCmd(void* cmdPtr, uint8_t stripeIdx) {
-    CmdBase* cmd = cmdPtr;
+    CmdBase* cmd = (CmdBase*)cmdPtr;
     cmd->nextPtr = NULL;
     if (stripeCmdQueueHead[stripeIdx] == NULL) {
         stripeCmdQueueHead[stripeIdx] = cmd;
@@ -151,15 +156,15 @@ STATIC mp_obj_t init() {
 // Clear the whole screen to a given colour
 //======================================================================================================
 STATIC mp_obj_t clear565(mp_obj_t colour565) {
-    //uint16_t colour = mp_obj_get_int(colour565);
+    uint16_t colour = mp_obj_get_int(colour565);
     int result = nextFree;
     for(int stripeIdx = 0; stripeIdx < NUM_STRIPES; stripeIdx++) {
         CmdClear565* clearCmd = (CmdClear565*)allocCmd(OPCODE_CLEAR565);
-         if(clearCmd != NULL) {
-             result = 0;
-    //         clearCmd->colour = colour;
-    //         enqueueCmd(clearCmd, stripeIdx);
-         }
+        if(clearCmd != NULL) {
+            result = 0;
+            clearCmd->colour = colour;
+            enqueueCmd(clearCmd, stripeIdx);
+        }
     }
     return mp_obj_new_int(result);
 }
@@ -167,27 +172,32 @@ STATIC mp_obj_t clear565(mp_obj_t colour565) {
 //======================================================================================================
 // blit a 32x32 bitmap to the screen (clipping as necessary)
 //======================================================================================================
-STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t buffer232) {
-    mp_obj_tuple_t* pos = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(posTuple);
-    mp_int_t posX = mp_obj_get_int(pos->items[0]);
-    mp_int_t posY = mp_obj_get_int(pos->items[1]);
+STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette) {
+    // mp_obj_tuple_t* pos = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(posTuple);
+    // mp_int_t posX = mp_obj_get_int(pos->items[0]);
+    // mp_int_t posY = mp_obj_get_int(pos->items[1]);
 
-    mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
-    mp_obj_array_t* dstBuf = MP_OBJ_TO_PTR(buffer232);
+    // mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
+    // mp_obj_array_t* paletteBuf = MP_OBJ_TO_PTR(palette);
 
-    const int dstStride = 320;
-    unsigned char* dst = (unsigned char*)dstBuf->items;
-    dst += posY*dstStride + posX;
 
-    unsigned char* src = (unsigned char*)srcBuf->items;
 
-    for(int row = 0; row < 32; row++) {
-        unsigned char* beyondEnd = dst+32;
-        while(dst < beyondEnd) {
-            *(dst++) = *(src++);
-        }
-        dst += dstStride - 32;
-    }
+
+
+
+    // const int dstStride = 320;
+    // unsigned char* dst = (unsigned char*)dstBuf->items;
+    // dst += posY*dstStride + posX;
+
+    // unsigned char* src = (unsigned char*)srcBuf->items;
+
+    // for(int row = 0; row < 32; row++) {
+    //     unsigned char* beyondEnd = dst+32;
+    //     while(dst < beyondEnd) {
+    //         *(dst++) = *(src++);
+    //     }
+    //     dst += dstStride - 32;
+    // }
 
     return 0;
 }
