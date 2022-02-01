@@ -49,31 +49,54 @@ for filename in sys.argv[1:]:
         #outBytes = (r) | (g << 5) | (b << 11)
 
         outColBytes.append(outBytes >> 8) 
-        outColBytes.append(outBytes & 0xff) 
-
+        outColBytes.append(outBytes & 0xff)
+    
+    # zero out the rest of the palette
+    for colIndex in range(len(outColBytes), 16*2):
+        outColBytes.append(0)
 
     # output to .py file
+    # spriteName = filename.lower()[:filename.rindex('.')]
+    # outFileName = spriteName+".py"
+
+    # try:
+    #     outFile = open(outFileName, "w")
+
+    #     outFile.write(f"{spriteName} = bytes(b\'")
+    #     for outPxByte in outPxBytes:
+    #         value = hex(outPxByte)[2:]
+    #         if len(value) == 1:
+    #             value = "0"+value
+    #         outFile.write("\\x"+value)
+    #     outFile.write("\')\n")
+
+    #     outFile.write(f"{spriteName}_pal = bytes(b\'")
+    #     for outColByte in outColBytes:
+    #         value = hex(outColByte)[2:]
+    #         if len(value) == 1:
+    #             value = "0"+value
+    #         outFile.write("\\x"+value)
+    #     outFile.write("\')\n")
+
+    #     outFile.close()
+    # except:
+    #     print(f"Failed to write to file \"{outFileName}\"")
+
+    # output to raw block file
+    paletteHeader = "pale".encode('ascii')
+    bmp32Header = "bp32".encode('ascii')
+
     spriteName = filename.lower()[:filename.rindex('.')]
-    outFileName = spriteName+".py"
+    outFileName = spriteName+".bin"
 
     try:
-        outFile = open(outFileName, "w")
+        outFile = open(outFileName, "wb")
 
-        outFile.write(f"{spriteName} = bytes(b\'")
-        for outPxByte in outPxBytes:
-            value = hex(outPxByte)[2:]
-            if len(value) == 1:
-                value = "0"+value
-            outFile.write("\\x"+value)
-        outFile.write("\')\n")
+        outFile.write(paletteHeader)
+        outFile.write(outColBytes)
 
-        outFile.write(f"{spriteName}_pal = bytes(b\'")
-        for outColByte in outColBytes:
-            value = hex(outColByte)[2:]
-            if len(value) == 1:
-                value = "0"+value
-            outFile.write("\\x"+value)
-        outFile.write("\')\n")
+        outFile.write(bmp32Header)
+        outFile.write(outPxBytes)
 
         outFile.close()
     except:

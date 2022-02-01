@@ -15,9 +15,6 @@ displayStripe = bytearray(STRIPE_BYTES)
 spi = None
 display = None
 
-# this is going to die
-renderBuffer=bytearray(320*240)
-
 ####################################################################################
 #
 # Initialise the rendering system
@@ -48,6 +45,39 @@ def cleanup():
 
     displayStripe = None
     renderBuffer = None
+
+####################################################################################
+#
+# loads palette and pixel data from a binary file
+#
+####################################################################################
+def loadSprite(filename):
+    result = {"palettes":[], "pixelBuffers":[] }
+
+    paletteHeader = "pale".encode('ascii')
+    bmp32Header = "bp32".encode('ascii')    
+
+    inFile = open(filename, "rb")
+
+    inHeader = inFile.read(4)
+
+    while len(inHeader) == 4:
+        if inHeader == paletteHeader:
+            result["palettes"].append(inFile.read(32))
+            #print("Loaded palette",len(result["palettes"]))
+        elif inHeader == bmp32Header:
+            result["pixelBuffers"].append(inFile.read(32*32//2))
+            #print("Loaded pixelBuffer",len(result["pixelBuffers"]))
+        else:
+            print("Unrecognised header found:", inHeader.decode('ascii'), ":", list(inHeader))
+            break
+
+        inHeader = inFile.read(4)
+
+    inFile.close()
+
+    return result
+
 
 ####################################################################################
 #

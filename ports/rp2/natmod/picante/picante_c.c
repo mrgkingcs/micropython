@@ -119,7 +119,7 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 //======================================================================================================
 //======================================================================================================
 
-#define CMD_BUFF_SIZE (1024)
+#define CMD_BUFF_SIZE (4096)
 
 uint8_t* commandBuffer[CMD_BUFF_SIZE] __attribute__ ((aligned (4)));
 uint16_t nextFree;
@@ -277,13 +277,14 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
     }
 
     // end stripe
+    if(endStripe > startStripe)
     {
         CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
         if(blitCmd != NULL) {
             blitCmd->srcBuf = src;
             blitCmd->palette = palette;
             blitCmd->numRows = (posY+32)-(endStripe*STRIPE_HEIGHT);
-            blitCmd->srcStartOffsetPx = srcOffsetPx;//((32-blitCmd->numRows)*32);
+            blitCmd->srcStartOffsetPx = srcOffsetPx;
             blitCmd->dstStartOffsetPx = posX;
             blitCmd->numPxInDrawRow = 32;
             blitCmd->srcStridePx = 32;
