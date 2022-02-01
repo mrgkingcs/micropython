@@ -48,8 +48,8 @@ for filename in sys.argv[1:]:
         outBytes = (b) | (g << 5) | (r << 11)
         #outBytes = (r) | (g << 5) | (b << 11)
 
-        outColBytes.append(outBytes & 0xff) 
         outColBytes.append(outBytes >> 8) 
+        outColBytes.append(outBytes & 0xff) 
 
 
     # output to .py file

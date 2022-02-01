@@ -19,17 +19,31 @@
 // the base unit for any command
 typedef struct _CmdBase {
     uint8_t opcode;
-    uint8_t reserved;
-    uint16_t reserved2;
+    uint8_t param8;
+    uint16_t param16;
     void* nextPtr;
 } CmdBase;
 
 // the command to clear the stripe to a given colour
 typedef struct _CmdClear565 {
     CmdBase base;
-    uint16_t colour;
-    uint16_t reserved;
+    // uint16_t colour;
+    // uint16_t reserved;
 } CmdClear565;
+
+// the command to blit from a 4bpp source buffer to the display stripe
+typedef struct _CmdBlit {
+    CmdBase base;
+    uint8_t* srcBuf;
+    uint16_t* palette;
+    uint16_t srcStartOffsetPx;
+    uint16_t dstStartOffsetPx;
+    uint8_t numPxInDrawRow;
+    uint8_t srcStridePx;
+    uint8_t numRows;
+    uint8_t reserved;
+} CmdBlit;
+
 
 //======================================================================================================
 //======================================================================================================
@@ -39,7 +53,8 @@ typedef struct _CmdClear565 {
 //======================================================================================================
 //======================================================================================================
 enum OPCODE {
-    OPCODE_CLEAR565 = 1
+    OPCODE_CLEAR565 = 1,
+    OPCODE_BLIT = 2
 };
 
 //======================================================================================================
@@ -48,6 +63,7 @@ enum OPCODE {
 uint16_t getCmdSize(uint16_t opCode) {
     switch(opCode) {
         case OPCODE_CLEAR565:   return sizeof(CmdClear565);
+        case OPCODE_BLIT:       return sizeof(CmdBlit);
         default:                return sizeof(CmdBase);
     }
 }
@@ -59,11 +75,36 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
     switch(cmdPtr->opcode) {
         case OPCODE_CLEAR565:
         {
-            CmdClear565* clearCmdPtr = (CmdClear565*)cmdPtr;
+            // CmdClear565* clearCmdPtr = (CmdClear565*)cmdPtr;
             uint16_t* target = displayStripe;
             uint16_t* beyondEnd = target + STRIPE_NUM_PX;
             while (target < beyondEnd) {
-                *(target++) = clearCmdPtr->colour;
+                *(target++) = cmdPtr->param16;//clearCmdPtr->colour;
+            }
+        }
+        break;
+
+        case OPCODE_BLIT:
+        {
+            CmdBlit* blitCmdPtr = (CmdBlit*)cmdPtr;
+            uint8_t* src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
+            uint16_t* dst = displayStripe+blitCmdPtr->dstStartOffsetPx;
+            int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
+            int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
+            for(int row = 0; row < blitCmdPtr->numRows; row++) {
+                for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
+                    uint colIndex = (*src) & 0xf;
+                    uint16_t colValue = blitCmdPtr->palette[colIndex];
+                    (*dst++) = colValue;
+
+                    colIndex = (*src) >> 4;
+                    colValue = blitCmdPtr->palette[colIndex];
+                    (*dst++) = colValue;
+
+                    src++;
+                }
+                dst += postRowDstStride;
+                src += postRowSrcStride;
             }
         }
         break;
@@ -157,13 +198,17 @@ STATIC mp_obj_t init() {
 //======================================================================================================
 STATIC mp_obj_t clear565(mp_obj_t colour565) {
     uint16_t colour = mp_obj_get_int(colour565);
-    int result = nextFree;
+    int result = 0;
+
     for(int stripeIdx = 0; stripeIdx < NUM_STRIPES; stripeIdx++) {
         CmdClear565* clearCmd = (CmdClear565*)allocCmd(OPCODE_CLEAR565);
         if(clearCmd != NULL) {
             result = 0;
-            clearCmd->colour = colour;
+            //clearCmd->colour = colour;
+            clearCmd->base.param16 = (colour << 8) | (colour >> 8);
             enqueueCmd(clearCmd, stripeIdx);
+        } else {
+            result = -1;
         }
     }
     return mp_obj_new_int(result);
@@ -172,34 +217,83 @@ STATIC mp_obj_t clear565(mp_obj_t colour565) {
 //======================================================================================================
 // blit a 32x32 bitmap to the screen (clipping as necessary)
 //======================================================================================================
-STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette) {
-    // mp_obj_tuple_t* pos = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(posTuple);
-    // mp_int_t posX = mp_obj_get_int(pos->items[0]);
-    // mp_int_t posY = mp_obj_get_int(pos->items[1]);
+STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t paletteObj) {
+    int result = 0;
 
-    // mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
-    // mp_obj_array_t* paletteBuf = MP_OBJ_TO_PTR(palette);
+    mp_obj_tuple_t* pos = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(posTuple);
+    mp_int_t posX = mp_obj_get_int(pos->items[0]);
+    mp_int_t posY = mp_obj_get_int(pos->items[1]);
 
+    mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
+    uint8_t* src = (uint8_t*)srcBuf->items;
 
+    mp_obj_array_t* paletteBuf = MP_OBJ_TO_PTR(paletteObj);
+    uint16_t* palette = (uint16_t*)paletteBuf->items;
 
+    // don't worry about clipping yet
+    
+    int startStripe = posY / STRIPE_HEIGHT;
+    int endStripe = (posY+31) / STRIPE_HEIGHT;
 
+    uint16_t srcOffsetPx = 0; // this should be X offset
 
+    // start stripe
+    {
+        CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
+        if(blitCmd != NULL) {
+            blitCmd->srcBuf = src;
+            blitCmd->palette = palette;
+            blitCmd->srcStartOffsetPx = srcOffsetPx;
+            blitCmd->dstStartOffsetPx = (posY % STRIPE_HEIGHT)*STRIPE_WIDTH + posX;
+            blitCmd->numPxInDrawRow = 32;
+            blitCmd->srcStridePx = 32;
+            blitCmd->numRows = STRIPE_HEIGHT - (posY % STRIPE_HEIGHT);
+            enqueueCmd(blitCmd, startStripe);
 
-    // const int dstStride = 320;
-    // unsigned char* dst = (unsigned char*)dstBuf->items;
-    // dst += posY*dstStride + posX;
+            srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
+        } else {
+            result = -1;
+        }
+    }
 
-    // unsigned char* src = (unsigned char*)srcBuf->items;
+    // middle stripe
+    if(endStripe > startStripe+1)
+    {
+        CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
+        if(blitCmd != NULL) {
+            blitCmd->srcBuf = src;
+            blitCmd->palette = palette;
+            blitCmd->srcStartOffsetPx = srcOffsetPx;
+            blitCmd->dstStartOffsetPx = posX;
+            blitCmd->numPxInDrawRow = 32;
+            blitCmd->srcStridePx = 32;
+            blitCmd->numRows = STRIPE_HEIGHT;
+            enqueueCmd(blitCmd, startStripe+1);
 
-    // for(int row = 0; row < 32; row++) {
-    //     unsigned char* beyondEnd = dst+32;
-    //     while(dst < beyondEnd) {
-    //         *(dst++) = *(src++);
-    //     }
-    //     dst += dstStride - 32;
-    // }
+            srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
+        } else {
+            result = -2;
+        }
+    }
 
-    return 0;
+    // end stripe
+    {
+        CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
+        if(blitCmd != NULL) {
+            blitCmd->srcBuf = src;
+            blitCmd->palette = palette;
+            blitCmd->numRows = (posY+32)-(endStripe*STRIPE_HEIGHT);
+            blitCmd->srcStartOffsetPx = srcOffsetPx;//((32-blitCmd->numRows)*32);
+            blitCmd->dstStartOffsetPx = posX;
+            blitCmd->numPxInDrawRow = 32;
+            blitCmd->srcStridePx = 32;
+            enqueueCmd(blitCmd, endStripe);
+        } else {
+            result = -3;
+        }
+    }
+
+    return mp_obj_new_int(result);
 }
 
 
@@ -225,38 +319,38 @@ STATIC mp_obj_t clearCmdQueue() {
     return mp_obj_new_int(0);
 }
 
-//======================================================================================================
-// not long to live: encode an RGBA2321 buffer to the BGR565 screen stripe
-//======================================================================================================
-STATIC mp_obj_t encode(mp_obj_t sourceBuff, mp_obj_t destBuff, mp_obj_t srcOffset) {
-    mp_int_t srcOffsetInt = mp_obj_get_int(srcOffset);
-    mp_obj_array_t* src = MP_OBJ_TO_PTR(sourceBuff);
-    mp_obj_array_t* dst = MP_OBJ_TO_PTR(destBuff);
-    unsigned char* srcItem = (unsigned char*)src->items + srcOffsetInt;
-    unsigned char* dstItem = (unsigned char*)dst->items;
-    unsigned char* beyondEndItem = dstItem + dst->len;
-    while (dstItem < beyondEndItem) {
-        unsigned short srcByte = *(srcItem++);
-        unsigned short result = ((srcByte & 0x3) << 14) | ((srcByte & 0x1C) << 6) | ((srcByte & 0x0060) >> 2);
+// //======================================================================================================
+// // not long to live: encode an RGBA2321 buffer to the BGR565 screen stripe
+// //======================================================================================================
+// STATIC mp_obj_t encode(mp_obj_t sourceBuff, mp_obj_t destBuff, mp_obj_t srcOffset) {
+//     mp_int_t srcOffsetInt = mp_obj_get_int(srcOffset);
+//     mp_obj_array_t* src = MP_OBJ_TO_PTR(sourceBuff);
+//     mp_obj_array_t* dst = MP_OBJ_TO_PTR(destBuff);
+//     unsigned char* srcItem = (unsigned char*)src->items + srcOffsetInt;
+//     unsigned char* dstItem = (unsigned char*)dst->items;
+//     unsigned char* beyondEndItem = dstItem + dst->len;
+//     while (dstItem < beyondEndItem) {
+//         unsigned short srcByte = *(srcItem++);
+//         unsigned short result = ((srcByte & 0x3) << 14) | ((srcByte & 0x1C) << 6) | ((srcByte & 0x0060) >> 2);
         
-        *(dstItem++) = result >> 8;
-        *(dstItem++) = result & 0xff;
-    }
-    return src;
-}
+//         *(dstItem++) = result >> 8;
+//         *(dstItem++) = result & 0xff;
+//     }
+//     return src;
+// }
 
-//======================================================================================================
-// not long to live: clear an RGBA2321 buffer to the given colour
-//======================================================================================================
-STATIC mp_obj_t clear232(mp_obj_t buffer232, mp_obj_t colour232) {
-    unsigned char colour = mp_obj_get_int(colour232) & 0xff;
-    mp_obj_array_t* buf = MP_OBJ_TO_PTR(buffer232);
-    unsigned char* bufItem = (unsigned char*)(buf->items);
-    unsigned char* beyondEndItem = bufItem + buf->len;
-    while(bufItem < beyondEndItem)
-        *(bufItem++) = colour;
-    return buffer232;
-}
+// //======================================================================================================
+// // not long to live: clear an RGBA2321 buffer to the given colour
+// //======================================================================================================
+// STATIC mp_obj_t clear232(mp_obj_t buffer232, mp_obj_t colour232) {
+//     unsigned char colour = mp_obj_get_int(colour232) & 0xff;
+//     mp_obj_array_t* buf = MP_OBJ_TO_PTR(buffer232);
+//     unsigned char* bufItem = (unsigned char*)(buf->items);
+//     unsigned char* beyondEndItem = bufItem + buf->len;
+//     while(bufItem < beyondEndItem)
+//         *(bufItem++) = colour;
+//     return buffer232;
+// }
 
 
 
@@ -270,8 +364,8 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(renderStripe_obj, renderStripe);
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(clearCmdQueue_obj, clearCmdQueue);
 
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(clear232_obj, clear232);
-STATIC MP_DEFINE_CONST_FUN_OBJ_3(encode_obj, encode);
+// STATIC MP_DEFINE_CONST_FUN_OBJ_2(clear232_obj, clear232);
+// STATIC MP_DEFINE_CONST_FUN_OBJ_3(encode_obj, encode);
 
 // This is the entry point and is called when the module is imported
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
@@ -287,8 +381,8 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
 
 
 
-    mp_store_global(MP_QSTR_clear232, MP_OBJ_FROM_PTR(&clear232_obj));
-    mp_store_global(MP_QSTR_encode, MP_OBJ_FROM_PTR(&encode_obj));
+    // mp_store_global(MP_QSTR_clear232, MP_OBJ_FROM_PTR(&clear232_obj));
+    // mp_store_global(MP_QSTR_encode, MP_OBJ_FROM_PTR(&encode_obj));
 
     // This must be last, it restores the globals dict
     MP_DYNRUNTIME_INIT_EXIT

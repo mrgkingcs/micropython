@@ -52,12 +52,12 @@ def test():
 
     start = ticks_ms()
 
-    numFrames = 100
+    numFrames = 1000
 
     for frame in range(0,numFrames):
         #print("Frame:",frame)
         #print("clear()")
-        picante.clear(0b0001000000100010 * frame)
+        picante.clear(0b0)
         
         posX += dirX
         if posX >= (SCR_WIDTH-32):
@@ -76,7 +76,7 @@ def test():
             dirY = speed
 
         #print("blit32()")
-        #picante.blit32(ballsprite, posX, posY, ballsprite_pal)
+        picante.blit32(ballsprite, posX, posY, ballsprite_pal)
 
         #print("draw()")
         picante.draw()
