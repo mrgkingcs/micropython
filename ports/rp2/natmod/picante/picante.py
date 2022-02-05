@@ -81,6 +81,17 @@ def loadSprite(filename):
 
 ####################################################################################
 #
+# sets the index to use as transparency
+#
+####################################################################################
+def setTransparentColour(index):
+    if index < 0 or index >= 16:
+        index = 0xff
+        
+    return picante_c.setTransparentColour(index)
+
+####################################################################################
+#
 # adds commands to clear the entire screen to the given RGB565 colour
 #
 ####################################################################################
