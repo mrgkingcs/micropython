@@ -9,8 +9,10 @@
 #define SCREEN_HEIGHT (240)
 #define NUM_STRIPES (15)
 #define STRIPE_WIDTH (SCREEN_WIDTH)
+// stripe height MUST be power of 2
 #define STRIPE_HEIGHT (SCREEN_HEIGHT/NUM_STRIPES)
 #define STRIPE_NUM_PX (STRIPE_WIDTH*STRIPE_HEIGHT)
+#define STRIPE_PX_ROW_MASK (STRIPE_HEIGHT-1)
 
 //======================================================================================================
 // Command structures
@@ -218,82 +220,96 @@ STATIC mp_obj_t clear565(mp_obj_t colour565) {
 // blit a 32x32 bitmap to the screen (clipping as necessary)
 //======================================================================================================
 STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t paletteObj) {
+    const int PX_WIDTH = 32;
+    const int PX_HEIGHT = 32;
     int result = 0;
 
     mp_obj_tuple_t* pos = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(posTuple);
     mp_int_t posX = mp_obj_get_int(pos->items[0]);
     mp_int_t posY = mp_obj_get_int(pos->items[1]);
 
-    mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
-    uint8_t* src = (uint8_t*)srcBuf->items;
+    // if the whole thing is off screen, just give up now
+    if (posX > -PX_WIDTH && posX < SCREEN_WIDTH && posY > -PX_WIDTH && posY < SCREEN_HEIGHT) {
 
-    mp_obj_array_t* paletteBuf = MP_OBJ_TO_PTR(paletteObj);
-    uint16_t* palette = (uint16_t*)paletteBuf->items;
+        // we're going to draw _something_ so get the buffer info now
+        mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
+        uint8_t* src = (uint8_t*)srcBuf->items;
 
-    // don't worry about clipping yet
-    
-    int startStripe = posY / STRIPE_HEIGHT;
-    int endStripe = (posY+31) / STRIPE_HEIGHT;
+        mp_obj_array_t* paletteBuf = MP_OBJ_TO_PTR(paletteObj);
+        uint16_t* palette = (uint16_t*)paletteBuf->items;
 
-    uint16_t srcOffsetPx = 0; // this should be X offset
+        // calculate which stripes we're going to draw into
+        int startStripe = ((posY+PX_HEIGHT) / STRIPE_HEIGHT) - (PX_HEIGHT/STRIPE_HEIGHT);   // relies on PX_HEIGHT being multiple of STRIPE_HEIGHT
+        int endStripe = (posY+(PX_HEIGHT-1)) / STRIPE_HEIGHT; // nb. posY+31 >= 0 or sprite would be off-screen culled already
 
-    // start stripe
-    {
-        CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
-        if(blitCmd != NULL) {
-            blitCmd->srcBuf = src;
-            blitCmd->palette = palette;
-            blitCmd->srcStartOffsetPx = srcOffsetPx;
-            blitCmd->dstStartOffsetPx = (posY % STRIPE_HEIGHT)*STRIPE_WIDTH + posX;
-            blitCmd->numPxInDrawRow = 32;
-            blitCmd->srcStridePx = 32;
-            blitCmd->numRows = STRIPE_HEIGHT - (posY % STRIPE_HEIGHT);
-            enqueueCmd(blitCmd, startStripe);
+        uint16_t srcOffsetPx = 0; // this should be X offset
 
-            srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
-        } else {
-            result = -1;
+        // start stripe - only if it's not off the top of the screen
+        int numRows = STRIPE_HEIGHT - (posY & 0xf);
+        if(startStripe >= 0)
+        {
+            CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
+            if(blitCmd != NULL) {
+                blitCmd->srcBuf = src;
+                blitCmd->palette = palette;
+                blitCmd->srcStartOffsetPx = srcOffsetPx;
+                blitCmd->dstStartOffsetPx = (posY % STRIPE_HEIGHT)*STRIPE_WIDTH + posX;
+                blitCmd->numPxInDrawRow = PX_WIDTH;
+                blitCmd->srcStridePx = PX_WIDTH;
+                blitCmd->numRows = numRows;//STRIPE_HEIGHT - (posY & STRIPE_PX_ROW_MASK);
+                enqueueCmd(blitCmd, startStripe);
+
+                //srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
+            } else {
+                result = -1;
+            }
+        }
+        srcOffsetPx += numRows * PX_WIDTH;
+
+        // middle stripe
+        numRows = STRIPE_HEIGHT;
+        if(endStripe > startStripe+1) {
+            int midStripe = startStripe+1;
+            if(midStripe >= 0 && midStripe < NUM_STRIPES)
+            {
+                CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
+                if(blitCmd != NULL) {
+                    blitCmd->srcBuf = src;
+                    blitCmd->palette = palette;
+                    blitCmd->srcStartOffsetPx = srcOffsetPx;
+                    blitCmd->dstStartOffsetPx = posX;
+                    blitCmd->numPxInDrawRow = PX_WIDTH;
+                    blitCmd->srcStridePx = PX_WIDTH;
+                    blitCmd->numRows = numRows;//STRIPE_HEIGHT;
+                    enqueueCmd(blitCmd, startStripe+1);
+
+                    //srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
+                } else {
+                    result = -2;
+                }
+            }
+            srcOffsetPx += numRows * PX_WIDTH;
+        }
+
+        // end stripe
+        numRows = (posY+PX_HEIGHT)-(endStripe*STRIPE_HEIGHT);
+        if(endStripe > startStripe && endStripe < NUM_STRIPES)
+        {
+            CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
+            if(blitCmd != NULL) {
+                blitCmd->srcBuf = src;
+                blitCmd->palette = palette;
+                blitCmd->numRows = numRows;
+                blitCmd->srcStartOffsetPx = srcOffsetPx;
+                blitCmd->dstStartOffsetPx = posX;
+                blitCmd->numPxInDrawRow = PX_WIDTH;
+                blitCmd->srcStridePx = PX_WIDTH;
+                enqueueCmd(blitCmd, endStripe);
+            } else {
+                result = -3;
+            }
         }
     }
-
-    // middle stripe
-    if(endStripe > startStripe+1)
-    {
-        CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
-        if(blitCmd != NULL) {
-            blitCmd->srcBuf = src;
-            blitCmd->palette = palette;
-            blitCmd->srcStartOffsetPx = srcOffsetPx;
-            blitCmd->dstStartOffsetPx = posX;
-            blitCmd->numPxInDrawRow = 32;
-            blitCmd->srcStridePx = 32;
-            blitCmd->numRows = STRIPE_HEIGHT;
-            enqueueCmd(blitCmd, startStripe+1);
-
-            srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
-        } else {
-            result = -2;
-        }
-    }
-
-    // end stripe
-    if(endStripe > startStripe)
-    {
-        CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
-        if(blitCmd != NULL) {
-            blitCmd->srcBuf = src;
-            blitCmd->palette = palette;
-            blitCmd->numRows = (posY+32)-(endStripe*STRIPE_HEIGHT);
-            blitCmd->srcStartOffsetPx = srcOffsetPx;
-            blitCmd->dstStartOffsetPx = posX;
-            blitCmd->numPxInDrawRow = 32;
-            blitCmd->srcStridePx = 32;
-            enqueueCmd(blitCmd, endStripe);
-        } else {
-            result = -3;
-        }
-    }
-
     return mp_obj_new_int(result);
 }
 
