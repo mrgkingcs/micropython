@@ -71,17 +71,119 @@ uint16_t getCmdSize(uint16_t opCode) {
 }
 
 //======================================================================================================
+// Render util: blit just the high colour from the source column to dest column
+//======================================================================================================
+void blitHiCol(uint8_t* src, uint16_t* dst, CmdBlit* blitCmdPtr) {
+    if(blitCmdPtr->transparentColour == 0xff) {
+        for(int row = 0; row < blitCmdPtr->numRows; row++) {
+            uint colIndex = (*src) >> 4;
+            uint16_t colValue = blitCmdPtr->palette[colIndex];
+            *dst = colValue;
+
+            src += blitCmdPtr->srcStridePx>>1;
+            dst += STRIPE_WIDTH;                 
+        }
+    } else {
+        for(int row = 0; row < blitCmdPtr->numRows; row++) {
+            uint colIndex = (*src) >> 4;
+            if(colIndex != blitCmdPtr->transparentColour) {
+                uint16_t colValue = blitCmdPtr->palette[colIndex];
+                *dst = colValue;
+            }
+
+            src += blitCmdPtr->srcStridePx>>1;
+            dst += STRIPE_WIDTH;                 
+        }      
+    }
+}
+
+//======================================================================================================
+// Render util: blit just the low colour from the source column to dest column
+//======================================================================================================
+void blitLoCol(uint8_t* src, uint16_t* dst, CmdBlit* blitCmdPtr) {
+    if(blitCmdPtr->transparentColour == 0xff) {
+        for(int row = 0; row < blitCmdPtr->numRows; row++) {
+            uint colIndex = (*src) & 0xf;
+            uint16_t colValue = blitCmdPtr->palette[colIndex];
+            *dst = colValue;
+
+            src += blitCmdPtr->srcStridePx>>1;
+            dst += STRIPE_WIDTH;                 
+        }
+    } else {
+        for(int row = 0; row < blitCmdPtr->numRows; row++) {
+            uint colIndex = (*src) & 0xf;
+            if(colIndex != blitCmdPtr->transparentColour) {
+                uint16_t colValue = blitCmdPtr->palette[colIndex];
+                *dst = colValue;
+            }
+
+            src += blitCmdPtr->srcStridePx>>1;
+            dst += STRIPE_WIDTH;                 
+        }      
+    }
+}
+
+
+//======================================================================================================
+// Render util: blit both pixels from source to dest
+//======================================================================================================
+void blitRect(uint8_t* src, uint16_t* dst, CmdBlit* blitCmdPtr) {
+    int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
+    int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
+    if(blitCmdPtr->transparentColour == 0xff) {
+        for(int row = 0; row < blitCmdPtr->numRows; row++) {
+            for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
+                uint colIndex = (*src) & 0xf;
+                uint16_t colValue = blitCmdPtr->palette[colIndex];
+                (*dst++) = colValue;
+
+                colIndex = (*src) >> 4;
+                colValue = blitCmdPtr->palette[colIndex];
+                (*dst++) = colValue;
+
+                src++;
+            }
+            dst += postRowDstStride;
+            src += postRowSrcStride;
+        }
+    } else {
+        for(int row = 0; row < blitCmdPtr->numRows; row++) {
+            for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
+                uint colIndex = (*src) & 0xf;
+                if(colIndex != blitCmdPtr->transparentColour) {
+                    uint16_t colValue = blitCmdPtr->palette[colIndex];
+                    *dst = colValue;
+                }
+                dst++;
+
+                colIndex = (*src) >> 4;
+                if(colIndex != blitCmdPtr->transparentColour) {
+                    uint16_t colValue = blitCmdPtr->palette[colIndex];
+                    *dst = colValue;
+                }
+                dst++;
+
+                src++;
+            }
+            dst += postRowDstStride;
+            src += postRowSrcStride;
+        }
+    }
+
+}
+
+//======================================================================================================
 // horrible monolithic function to execute the given command
 //======================================================================================================
 void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
     switch(cmdPtr->opcode) {
         case OPCODE_CLEAR565:
         {
-            // CmdClear565* clearCmdPtr = (CmdClear565*)cmdPtr;
             uint16_t* target = displayStripe;
             uint16_t* beyondEnd = target + STRIPE_NUM_PX;
             while (target < beyondEnd) {
-                *(target++) = cmdPtr->param16;//clearCmdPtr->colour;
+                *(target++) = cmdPtr->param16;
             }
         }
         break;
@@ -92,133 +194,26 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
             uint16_t* dst = displayStripe+blitCmdPtr->dstStartOffsetPx;
             uint8_t* src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
 
-            if(blitCmdPtr->transparentColour == 0xff) {
-                if(blitCmdPtr->srcStartOffsetPx & 1) {
-                    // blit odd start column pixels first
-                    uint8_t* rowSrc = src;
-                    uint16_t* rowDst = dst;
-                    for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                            uint colIndex = (*rowSrc) >> 4;
-                            uint16_t colValue = blitCmdPtr->palette[colIndex];
-                            *rowDst = colValue;
+            if(blitCmdPtr->srcStartOffsetPx & 1) {
+                blitHiCol(src, dst, blitCmdPtr);
 
-                            rowSrc += blitCmdPtr->srcStridePx>>1;
-                            rowDst += STRIPE_WIDTH;                 
-                    }
+                blitCmdPtr->srcStartOffsetPx++;
+                src++;
+                dst++;
+                blitCmdPtr->numPxInDrawRow--;
+            }
 
-                    blitCmdPtr->srcStartOffsetPx++;
-                    src++;
-                    dst++;
-                    blitCmdPtr->numPxInDrawRow--;
-                }
+            if(blitCmdPtr->numPxInDrawRow & 1) {
+                // blit final column pixels
+                blitLoCol(src+(blitCmdPtr->numPxInDrawRow>>1), dst + blitCmdPtr->numPxInDrawRow-1, blitCmdPtr);
+                blitCmdPtr->numPxInDrawRow--;
+            }
 
-                if(blitCmdPtr->numPxInDrawRow & 1) {
-                    // blit final column pixels
-                    uint8_t* rowSrc = src+(blitCmdPtr->numPxInDrawRow>>1);
-                    uint16_t* rowDst = dst + blitCmdPtr->numPxInDrawRow-1;
-
-                    for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                            uint colIndex = (*rowSrc) & 0xf;
-                            uint16_t colValue = blitCmdPtr->palette[colIndex];
-                            *rowDst = colValue;
-
-                            rowSrc += blitCmdPtr->srcStridePx>>1;
-                            rowDst += STRIPE_WIDTH;                 
-                    }
-                    blitCmdPtr->numPxInDrawRow--;
-                }
-
-                // then do main / central rect
-                if(blitCmdPtr->numPxInDrawRow > 0)
-                {
-                    src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
-
-                    int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
-                    int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
-                    for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                        for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
-                            uint colIndex = (*src) & 0xf;
-                            uint16_t colValue = blitCmdPtr->palette[colIndex];
-                            (*dst++) = colValue;
-
-                            colIndex = (*src) >> 4;
-                            colValue = blitCmdPtr->palette[colIndex];
-                            (*dst++) = colValue;
-
-                            src++;
-                        }
-                        dst += postRowDstStride;
-                        src += postRowSrcStride;
-                    }
-                }
-            } else {
-                if(blitCmdPtr->srcStartOffsetPx & 1) {
-                    // blit odd start column pixels first
-                    uint8_t* rowSrc = src;
-                    uint16_t* rowDst = dst;
-                    for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                            uint colIndex = (*rowSrc) >> 4;
-                            if(colIndex != blitCmdPtr->transparentColour) {
-                                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                                *rowDst = colValue;
-                            }
-
-                            rowSrc += blitCmdPtr->srcStridePx>>1;
-                            rowDst += STRIPE_WIDTH;                 
-                    }
-
-                    blitCmdPtr->srcStartOffsetPx++;
-                    src++;
-                    dst++;
-                    blitCmdPtr->numPxInDrawRow--;
-                }
-
-                if(blitCmdPtr->numPxInDrawRow & 1) {
-                    // blit final column pixels
-                    uint8_t* rowSrc = src+(blitCmdPtr->numPxInDrawRow>>1);
-                    uint16_t* rowDst = dst + blitCmdPtr->numPxInDrawRow-1;
-
-                    for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                            uint colIndex = (*rowSrc) & 0xf;
-                            if(colIndex != blitCmdPtr->transparentColour) {
-                                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                                *rowDst = colValue;
-                            }
-
-                            rowSrc += blitCmdPtr->srcStridePx>>1;
-                            rowDst += STRIPE_WIDTH;                 
-                    }
-                    blitCmdPtr->numPxInDrawRow--;
-                }
-
-                // then do main / central rect
-                if(blitCmdPtr->numPxInDrawRow > 0)
-                {
-                    src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
-
-                    int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
-                    int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
-                    for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                        for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
-                            uint colIndex = (*src) & 0xf;
-                            if(colIndex != blitCmdPtr->transparentColour) {
-                                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                                *dst = colValue;
-                            }
-                            dst++;
-
-                            colIndex = (*src) >> 4;
-                            if(colIndex != blitCmdPtr->transparentColour) {
-                                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                                *dst = colValue;
-                            }
-                            dst++;
-                            src++;
-                        }
-                        dst += postRowDstStride;
-                        src += postRowSrcStride;
-                    }
-                } 
+            // then do main / central rect
+            if(blitCmdPtr->numPxInDrawRow > 0)
+            {
+                src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
+                blitRect(src, dst, blitCmdPtr);
             }
         }
         break;
