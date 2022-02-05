@@ -163,7 +163,7 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 //======================================================================================================
 //======================================================================================================
 
-#define CMD_BUFF_SIZE (4096)
+#define CMD_BUFF_SIZE (8192)
 
 uint8_t* commandBuffer[CMD_BUFF_SIZE] __attribute__ ((aligned (4)));
 uint16_t nextFree;

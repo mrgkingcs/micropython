@@ -66,10 +66,10 @@ def test():
         
         
         
-#         for tileRow in range(0, (SCR_HEIGHT/32)-1):
-#             for tileCol in range(0, SCR_WIDTH/32):
-#                 tileId = (tileRow*8 + tileCol) % len(tileSetInfo["pixelBuffers"])
-#                 picante.blit32(tileSetInfo["pixelBuffers"][tileId], tileCol*32-4, tileRow*32-6, tileSetInfo["palettes"][0])
+        for tileRow in range(0, (SCR_HEIGHT/32)):
+            for tileCol in range(0, SCR_WIDTH/32 +1):
+                tileId = (tileRow*8 + tileCol) % len(tileSetInfo["pixelBuffers"])
+                picante.blit32(tileSetInfo["pixelBuffers"][tileId], tileCol*32-4, tileRow*32-6, tileSetInfo["palettes"][0])
             
         picante.blit32(ballSpriteInfo["pixelBuffers"][0], posX, posY, ballSpriteInfo["palettes"][0])
 
