@@ -75,30 +75,6 @@ for filename in sys.argv[1:]:
             #print(len(outPxBytes))
             frames.append(outPxBytes)
 
-    # sheetName = filename.lower()[:filename.rindex('.')]
-    # outFileName = sheetName+".py"
-
-    # try:
-    #     outFile = open(outFileName, "w")
-
-    #     outFile.write(f"{sheetName} = [\n")
-
-    #     for outPxBytes in frames:
-    #         outFile.write("\tbytes(b\'")
-    #         for outPxByte in outPxBytes:
-    #             #print(outPxByte)
-    #             value = hex(outPxByte)[2:]
-    #             if len(value) == 1:
-    #                 value = "0"+value
-    #             outFile.write("\\x"+value)
-    #         outFile.write("\'),\n")
-
-    #     outFile.write("]\n")
-
-    #     outFile.close()
-    # except:
-    #     print(f"Failed to write to file \"{outFileName}\"")
-
     paletteHeader = "pale".encode('ascii')
     bmp32Header = "bp32".encode('ascii')
 

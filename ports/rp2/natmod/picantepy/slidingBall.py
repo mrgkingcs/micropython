@@ -42,9 +42,9 @@ def test():
     micropython.mem_info()
 
     speed = 3
-    posX = 0
-    posY = 16
-    dirX = 0#speed
+    posX = -32
+    posY = -32
+    dirX = speed
     dirY = speed
 
     start = ticks_ms()
@@ -54,7 +54,7 @@ def test():
     for frame in range(0,numFrames):
         #print("Frame:",frame)
         #print("clear()")
-        picante.clear(0b0)
+        picante.clear(0x07ffffff)
         
         posX += dirX
         if posX >= (SCR_WIDTH+32):

@@ -89,24 +89,66 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
         case OPCODE_BLIT:
         {
             CmdBlit* blitCmdPtr = (CmdBlit*)cmdPtr;
-            uint8_t* src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
             uint16_t* dst = displayStripe+blitCmdPtr->dstStartOffsetPx;
-            int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
-            int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
-            for(int row = 0; row < blitCmdPtr->numRows; row++) {
-                for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
-                    uint colIndex = (*src) & 0xf;
-                    uint16_t colValue = blitCmdPtr->palette[colIndex];
-                    (*dst++) = colValue;
+            uint8_t* src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
 
-                    colIndex = (*src) >> 4;
-                    colValue = blitCmdPtr->palette[colIndex];
-                    (*dst++) = colValue;
+            if(blitCmdPtr->srcStartOffsetPx & 1) {
+                // blit odd start column pixels first
+                uint8_t* rowSrc = src;
+                uint16_t* rowDst = dst;
+                for(int row = 0; row < blitCmdPtr->numRows; row++) {
+                        uint colIndex = (*rowSrc) >> 4;
+                        uint16_t colValue = blitCmdPtr->palette[colIndex];
+                        *rowDst = colValue;
 
-                    src++;
+                        rowSrc += blitCmdPtr->srcStridePx>>1;
+                        rowDst += STRIPE_WIDTH;                 
                 }
-                dst += postRowDstStride;
-                src += postRowSrcStride;
+
+                blitCmdPtr->srcStartOffsetPx++;
+                src++;
+                dst++;
+                blitCmdPtr->numPxInDrawRow--;
+            }
+
+            if(blitCmdPtr->numPxInDrawRow & 1) {
+                // blit final column pixels
+                uint8_t* rowSrc = src+(blitCmdPtr->numPxInDrawRow>>1);
+                uint16_t* rowDst = dst + blitCmdPtr->numPxInDrawRow-1;
+
+                for(int row = 0; row < blitCmdPtr->numRows; row++) {
+                        uint colIndex = (*rowSrc) & 0xf;
+                        uint16_t colValue = blitCmdPtr->palette[colIndex];
+                        *rowDst = colValue;
+
+                        rowSrc += blitCmdPtr->srcStridePx>>1;
+                        rowDst += STRIPE_WIDTH;                 
+                }
+                blitCmdPtr->numPxInDrawRow--;
+            }
+
+            // then do main / central rect
+            if(blitCmdPtr->numPxInDrawRow > 0)
+            {
+                src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
+
+                int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
+                int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
+                for(int row = 0; row < blitCmdPtr->numRows; row++) {
+                    for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
+                        uint colIndex = (*src) & 0xf;
+                        uint16_t colValue = blitCmdPtr->palette[colIndex];
+                        (*dst++) = colValue;
+
+                        colIndex = (*src) >> 4;
+                        colValue = blitCmdPtr->palette[colIndex];
+                        (*dst++) = colValue;
+
+                        src++;
+                    }
+                    dst += postRowDstStride;
+                    src += postRowSrcStride;
+                }
             }
         }
         break;
@@ -242,10 +284,18 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
         int startStripe = ((posY+PX_HEIGHT) / STRIPE_HEIGHT) - (PX_HEIGHT/STRIPE_HEIGHT);   // relies on PX_HEIGHT being multiple of STRIPE_HEIGHT
         int endStripe = (posY+(PX_HEIGHT-1)) / STRIPE_HEIGHT; // nb. posY+31 >= 0 or sprite would be off-screen culled already
 
-        uint16_t srcOffsetPx = 0; // this should be X offset
+        // calculate left clipping
+        uint16_t srcOffsetPx = (posX >= 0) ? 0 : -posX;
+        uint16_t numPxInDrawRow = PX_WIDTH - srcOffsetPx;
+        uint16_t clippedPosX = (posX >= 0) ? posX : 0;
+
+        // calculate right clipping
+        if(posX + numPxInDrawRow > SCREEN_WIDTH) {
+            numPxInDrawRow = SCREEN_WIDTH - posX;
+        }
 
         // start stripe - only if it's not off the top of the screen
-        int numRows = STRIPE_HEIGHT - (posY & 0xf);
+        int numRows = STRIPE_HEIGHT - (posY & STRIPE_PX_ROW_MASK);
         if(startStripe >= 0)
         {
             CmdBlit* blitCmd = (CmdBlit*)allocCmd(OPCODE_BLIT);
@@ -253,13 +303,11 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
                 blitCmd->srcBuf = src;
                 blitCmd->palette = palette;
                 blitCmd->srcStartOffsetPx = srcOffsetPx;
-                blitCmd->dstStartOffsetPx = (posY % STRIPE_HEIGHT)*STRIPE_WIDTH + posX;
-                blitCmd->numPxInDrawRow = PX_WIDTH;
+                blitCmd->dstStartOffsetPx = (posY % STRIPE_HEIGHT)*STRIPE_WIDTH + clippedPosX;
+                blitCmd->numPxInDrawRow = numPxInDrawRow;
                 blitCmd->srcStridePx = PX_WIDTH;
-                blitCmd->numRows = numRows;//STRIPE_HEIGHT - (posY & STRIPE_PX_ROW_MASK);
+                blitCmd->numRows = numRows;
                 enqueueCmd(blitCmd, startStripe);
-
-                //srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
             } else {
                 result = -1;
             }
@@ -277,13 +325,11 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
                     blitCmd->srcBuf = src;
                     blitCmd->palette = palette;
                     blitCmd->srcStartOffsetPx = srcOffsetPx;
-                    blitCmd->dstStartOffsetPx = posX;
-                    blitCmd->numPxInDrawRow = PX_WIDTH;
+                    blitCmd->dstStartOffsetPx = clippedPosX;
+                    blitCmd->numPxInDrawRow = numPxInDrawRow;
                     blitCmd->srcStridePx = PX_WIDTH;
-                    blitCmd->numRows = numRows;//STRIPE_HEIGHT;
+                    blitCmd->numRows = numRows;
                     enqueueCmd(blitCmd, startStripe+1);
-
-                    //srcOffsetPx += blitCmd->numRows * blitCmd->srcStridePx;
                 } else {
                     result = -2;
                 }
@@ -301,8 +347,8 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
                 blitCmd->palette = palette;
                 blitCmd->numRows = numRows;
                 blitCmd->srcStartOffsetPx = srcOffsetPx;
-                blitCmd->dstStartOffsetPx = posX;
-                blitCmd->numPxInDrawRow = PX_WIDTH;
+                blitCmd->dstStartOffsetPx = clippedPosX;
+                blitCmd->numPxInDrawRow = numPxInDrawRow;
                 blitCmd->srcStridePx = PX_WIDTH;
                 enqueueCmd(blitCmd, endStripe);
             } else {
