@@ -81,6 +81,45 @@ def loadSprite(filename):
 
 ####################################################################################
 #
+# loads a bitmap font from a binary file, returning a FontID to use when rendering 
+#
+####################################################################################
+def loadFont(filename):
+    fontID = -1
+
+    fontHeader = "fnt1".encode('ascii')
+
+    inFile = open(filename, "rb")
+    inHeader = inFile.read(4)
+    if inHeader == fontHeader:
+        charSizeByte = int.from_bytes(inFile.read(1), "little")
+        charWidth = charSizeByte & 0xf
+        charHeight = charSizeByte>>4
+        
+        advanceByte = int.from_bytes(inFile.read(1), "little")
+        advanceX = advanceByte & 0xf
+        advanceY = advanceByte >> 4
+
+        firstCharCode = int.from_bytes(inFile.read(1), "little")
+        finalCharCode = int.from_bytes(inFile.read(1), "little")
+        numChars = (finalCharCode+1)-firstCharCode
+
+        bufferBytes = charHeight*numChars
+        buffer = inFile.read(bufferBytes)
+
+        fontInfo = (charWidth, charHeight, advanceX, advanceY, firstCharCode, finalCharCode, buffer)
+        
+        print("Loaded font: ",charWidth,"x",charHeight,":",advanceX,advanceY,firstCharCode, finalCharCode, buffer)
+
+        fontID = picante_c.addFont( fontInfo )
+    else:
+        print("Failed to load font:",filename)
+
+    return fontID
+    
+
+####################################################################################
+#
 # sets the index to use as transparency
 #
 ####################################################################################
@@ -89,6 +128,14 @@ def setTransparentColour(index):
         index = 0xff
         
     return picante_c.setTransparentColour(index)
+
+####################################################################################
+#
+# sets the font to use for text rendering
+#
+####################################################################################
+def setTransparentColour(fontBuffer):
+    return picante_c.setFont(fontBuffer)
 
 ####################################################################################
 #
@@ -108,6 +155,14 @@ def clear(colour565 = 0):
 ####################################################################################
 def blit32(bitmap, x, y, palette):
     return picante_c.blit32(bitmap, (x, y), palette)
+
+####################################################################################
+#
+# Draws the given string at the given coords
+#
+####################################################################################
+def drawText(string, x, y, colour565):
+    return picante_c.drawText(string, (x, y), colour565)
 
 ####################################################################################
 #

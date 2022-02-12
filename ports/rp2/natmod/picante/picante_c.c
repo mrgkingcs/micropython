@@ -5,220 +5,34 @@
 
 #include "py/nativeglue.h"
 
-#define SCREEN_WIDTH (320)
-#define SCREEN_HEIGHT (240)
-#define NUM_STRIPES (15)
-#define STRIPE_WIDTH (SCREEN_WIDTH)
-// stripe height MUST be power of 2
-#define STRIPE_HEIGHT (SCREEN_HEIGHT/NUM_STRIPES)
-#define STRIPE_NUM_PX (STRIPE_WIDTH*STRIPE_HEIGHT)
-#define STRIPE_PX_ROW_MASK (STRIPE_HEIGHT-1)
+#include "cmdQueue.h"
 
-//======================================================================================================
-// Command structures
-//======================================================================================================
 
-// the base unit for any command
-typedef struct _CmdBase {
-    uint8_t opcode;
-    uint8_t param8;
-    uint16_t param16;
-    void* nextPtr;
-} CmdBase;
 
-// the command to clear the stripe to a given colour
-typedef struct _CmdClear565 {
-    CmdBase base;
-    // uint16_t colour;
-    // uint16_t reserved;
-} CmdClear565;
 
-// the command to blit from a 4bpp source buffer to the display stripe
-typedef struct _CmdBlit {
-    CmdBase base;
-    uint8_t* srcBuf;
-    uint16_t* palette;
-    uint16_t srcStartOffsetPx;
-    uint16_t dstStartOffsetPx;
-    uint8_t numPxInDrawRow;
-    uint8_t srcStridePx;
-    uint8_t numRows;
-    uint8_t transparentColour;
-} CmdBlit;
+
 
 
 //======================================================================================================
+// FontInfo registry
 //======================================================================================================
-//
-// Render commands
-//
-//======================================================================================================
-//======================================================================================================
-enum OPCODE {
-    OPCODE_CLEAR565 = 1,
-    OPCODE_BLIT = 2
-};
+#define MAX_FONTS (4)
 
-//======================================================================================================
-// returns the size of the command structure for the given opcode
-//======================================================================================================
-uint16_t getCmdSize(uint16_t opCode) {
-    switch(opCode) {
-        case OPCODE_CLEAR565:   return sizeof(CmdClear565);
-        case OPCODE_BLIT:       return sizeof(CmdBlit);
-        default:                return sizeof(CmdBase);
-    }
-}
+typedef struct _FontInfo {
+    uint8_t charPxW;
+    uint8_t charPxH;
+    uint8_t advanceX;
+    uint8_t advanceY;   // i.e. line-height
+    uint8_t firstCharCode;
+    uint8_t finalCharCode;
+    uint8_t* buffer;
+} FontInfo;
 
-//======================================================================================================
-// Render util: blit just the high colour from the source column to dest column
-//======================================================================================================
-void blitHiCol(uint8_t* src, uint16_t* dst, CmdBlit* blitCmdPtr) {
-    if(blitCmdPtr->transparentColour == 0xff) {
-        for(int row = 0; row < blitCmdPtr->numRows; row++) {
-            uint colIndex = (*src) >> 4;
-            uint16_t colValue = blitCmdPtr->palette[colIndex];
-            *dst = colValue;
-
-            src += blitCmdPtr->srcStridePx>>1;
-            dst += STRIPE_WIDTH;                 
-        }
-    } else {
-        for(int row = 0; row < blitCmdPtr->numRows; row++) {
-            uint colIndex = (*src) >> 4;
-            if(colIndex != blitCmdPtr->transparentColour) {
-                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                *dst = colValue;
-            }
-
-            src += blitCmdPtr->srcStridePx>>1;
-            dst += STRIPE_WIDTH;                 
-        }      
-    }
-}
-
-//======================================================================================================
-// Render util: blit just the low colour from the source column to dest column
-//======================================================================================================
-void blitLoCol(uint8_t* src, uint16_t* dst, CmdBlit* blitCmdPtr) {
-    if(blitCmdPtr->transparentColour == 0xff) {
-        for(int row = 0; row < blitCmdPtr->numRows; row++) {
-            uint colIndex = (*src) & 0xf;
-            uint16_t colValue = blitCmdPtr->palette[colIndex];
-            *dst = colValue;
-
-            src += blitCmdPtr->srcStridePx>>1;
-            dst += STRIPE_WIDTH;                 
-        }
-    } else {
-        for(int row = 0; row < blitCmdPtr->numRows; row++) {
-            uint colIndex = (*src) & 0xf;
-            if(colIndex != blitCmdPtr->transparentColour) {
-                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                *dst = colValue;
-            }
-
-            src += blitCmdPtr->srcStridePx>>1;
-            dst += STRIPE_WIDTH;                 
-        }      
-    }
-}
+FontInfo fontRegistry[MAX_FONTS];
+uint8_t numFonts;
+uint8_t currFontID;
 
 
-//======================================================================================================
-// Render util: blit both pixels from source to dest
-//======================================================================================================
-void blitRect(uint8_t* src, uint16_t* dst, CmdBlit* blitCmdPtr) {
-    int postRowSrcStride = (blitCmdPtr->srcStridePx - blitCmdPtr->numPxInDrawRow)>>1;
-    int postRowDstStride = STRIPE_WIDTH - blitCmdPtr->numPxInDrawRow;
-    if(blitCmdPtr->transparentColour == 0xff) {
-        for(int row = 0; row < blitCmdPtr->numRows; row++) {
-            for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
-                uint colIndex = (*src) & 0xf;
-                uint16_t colValue = blitCmdPtr->palette[colIndex];
-                (*dst++) = colValue;
-
-                colIndex = (*src) >> 4;
-                colValue = blitCmdPtr->palette[colIndex];
-                (*dst++) = colValue;
-
-                src++;
-            }
-            dst += postRowDstStride;
-            src += postRowSrcStride;
-        }
-    } else {
-        for(int row = 0; row < blitCmdPtr->numRows; row++) {
-            for(int srcByte = 0; srcByte < blitCmdPtr->numPxInDrawRow>>1; srcByte++) {
-                uint colIndex = (*src) & 0xf;
-                if(colIndex != blitCmdPtr->transparentColour) {
-                    uint16_t colValue = blitCmdPtr->palette[colIndex];
-                    *dst = colValue;
-                }
-                dst++;
-
-                colIndex = (*src) >> 4;
-                if(colIndex != blitCmdPtr->transparentColour) {
-                    uint16_t colValue = blitCmdPtr->palette[colIndex];
-                    *dst = colValue;
-                }
-                dst++;
-
-                src++;
-            }
-            dst += postRowDstStride;
-            src += postRowSrcStride;
-        }
-    }
-
-}
-
-//======================================================================================================
-// horrible monolithic function to execute the given command
-//======================================================================================================
-void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
-    switch(cmdPtr->opcode) {
-        case OPCODE_CLEAR565:
-        {
-            uint16_t* target = displayStripe;
-            uint16_t* beyondEnd = target + STRIPE_NUM_PX;
-            while (target < beyondEnd) {
-                *(target++) = cmdPtr->param16;
-            }
-        }
-        break;
-
-        case OPCODE_BLIT:
-        {
-            CmdBlit* blitCmdPtr = (CmdBlit*)cmdPtr;
-            uint16_t* dst = displayStripe+blitCmdPtr->dstStartOffsetPx;
-            uint8_t* src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
-
-            if(blitCmdPtr->srcStartOffsetPx & 1) {
-                blitHiCol(src, dst, blitCmdPtr);
-
-                blitCmdPtr->srcStartOffsetPx++;
-                src++;
-                dst++;
-                blitCmdPtr->numPxInDrawRow--;
-            }
-
-            if(blitCmdPtr->numPxInDrawRow & 1) {
-                // blit final column pixels
-                blitLoCol(src+(blitCmdPtr->numPxInDrawRow>>1), dst + blitCmdPtr->numPxInDrawRow-1, blitCmdPtr);
-                blitCmdPtr->numPxInDrawRow--;
-            }
-
-            // then do main / central rect
-            if(blitCmdPtr->numPxInDrawRow > 0)
-            {
-                src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
-                blitRect(src, dst, blitCmdPtr);
-            }
-        }
-        break;
-    }
-}
 
 //======================================================================================================
 //======================================================================================================
@@ -230,71 +44,7 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 
 uint8_t transparentColour;
 
-//======================================================================================================
-//======================================================================================================
-//
-// Render command queue
-//
-//======================================================================================================
-//======================================================================================================
 
-#define CMD_BUFF_SIZE (8192)
-
-uint8_t* commandBuffer[CMD_BUFF_SIZE] __attribute__ ((aligned (4)));
-uint16_t nextFree;
-
-CmdBase* stripeCmdQueueHead[NUM_STRIPES];
-CmdBase* stripeCmdQueueTail[NUM_STRIPES];
-
-//======================================================================================================
-// Resets the command buffer
-//======================================================================================================
-void resetCmdBuffer() {
-    nextFree = 0;
-    for(int stripeIdx = 0; stripeIdx < NUM_STRIPES; stripeIdx++ ) {
-        stripeCmdQueueHead[stripeIdx] = NULL;
-        stripeCmdQueueTail[stripeIdx] = NULL;
-    }
-}
-
-//======================================================================================================
-// Allocate a piece of memory from the buffer
-//======================================================================================================
-void* alloc(uint16_t size) {
-    void* result = NULL;
-    size = (size+3) & (~3);
-    if(nextFree+size < CMD_BUFF_SIZE) {
-         result = (void*)(commandBuffer+nextFree);
-         nextFree += size;
-    } else {
-
-    }
-    return result;
-}
-
-//======================================================================================================
-// Allocate a command from the buffer
-//======================================================================================================
-CmdBase* allocCmd(uint16_t opCode) {
-    CmdBase* cmd = (CmdBase*)alloc(getCmdSize(opCode));
-    cmd->opcode = opCode;
-    return cmd;
-} 
-
-//======================================================================================================
-// Enqueue a command for the given stripe
-//======================================================================================================
-void enqueueCmd(void* cmdPtr, uint8_t stripeIdx) {
-    CmdBase* cmd = (CmdBase*)cmdPtr;
-    cmd->nextPtr = NULL;
-    if (stripeCmdQueueHead[stripeIdx] == NULL) {
-        stripeCmdQueueHead[stripeIdx] = cmd;
-        stripeCmdQueueTail[stripeIdx] = cmd;
-    } else {
-        stripeCmdQueueTail[stripeIdx]->nextPtr = cmd;
-        stripeCmdQueueTail[stripeIdx] = cmd;
-    }
-}
 
 //======================================================================================================
 //======================================================================================================
@@ -309,16 +59,56 @@ void enqueueCmd(void* cmdPtr, uint8_t stripeIdx) {
 //======================================================================================================
 STATIC mp_obj_t init() {
     transparentColour = 0xff;
+    numFonts = 0;
+    currFontID = 0xff;
+    resetCmdBuffer();
+    allocCmd(OPCODE_TEXT);
+    allocCmd(OPCODE_TEXT);
     resetCmdBuffer();
     return mp_obj_new_int(0);
 }
 
 //======================================================================================================
-// Clear the whole screen to a given colour
+// Set the palette index to treat as transparent 
 //======================================================================================================
 STATIC mp_obj_t setTransparentColour(mp_obj_t colourIndex) {
     transparentColour = (uint8_t)mp_obj_get_int(colourIndex);
     return NULL;
+}
+
+//======================================================================================================
+// Set the font buffer to use for text rendering 
+//======================================================================================================
+STATIC mp_obj_t setFont(mp_obj_t fontIDObj) {
+    uint8_t newFontID = mp_obj_get_int(fontIDObj);
+    if(newFontID < numFonts)
+        currFontID = newFontID;
+    return NULL;
+}
+
+//======================================================================================================
+// Add a font to the internal list of fonts
+//======================================================================================================
+STATIC mp_obj_t addFont(mp_obj_t fontInfoObj) {
+    mp_obj_tuple_t* fontInfo = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(fontInfoObj);
+    uint8_t fontID = -1;
+    if(numFonts < MAX_FONTS) {
+        FontInfo* newFont = fontRegistry+numFonts;
+        fontID = (numFonts++);
+        if(currFontID == 0xff) {
+            currFontID = fontID;
+        }
+        newFont->charPxW = mp_obj_get_int(fontInfo->items[0]);
+        newFont->charPxH = mp_obj_get_int(fontInfo->items[1]);
+        newFont->advanceX = mp_obj_get_int(fontInfo->items[2]);
+        newFont->advanceY = mp_obj_get_int(fontInfo->items[3]);
+        newFont->firstCharCode = mp_obj_get_int(fontInfo->items[4]);
+        newFont->finalCharCode = mp_obj_get_int(fontInfo->items[5]);
+
+        mp_obj_array_t* buffer = MP_OBJ_TO_PTR(fontInfo->items[6]);
+        newFont->buffer = (uint8_t*)buffer->items;
+    }
+    return mp_obj_new_int(fontID);
 }
 
 //======================================================================================================
@@ -355,7 +145,7 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
     mp_int_t posY = mp_obj_get_int(pos->items[1]);
 
     // if the whole thing is off screen, just give up now
-    if (posX > -PX_WIDTH && posX < SCREEN_WIDTH && posY > -PX_WIDTH && posY < SCREEN_HEIGHT) {
+    if (posX > -PX_WIDTH && posX < SCREEN_WIDTH && posY > -PX_HEIGHT && posY < SCREEN_HEIGHT) {
 
         // we're going to draw _something_ so get the buffer info now
         mp_obj_array_t* srcBuf = MP_OBJ_TO_PTR(srcBuf32x32);
@@ -387,7 +177,7 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
                 blitCmd->srcBuf = src;
                 blitCmd->palette = palette;
                 blitCmd->srcStartOffsetPx = srcOffsetPx;
-                blitCmd->dstStartOffsetPx = (posY % STRIPE_HEIGHT)*STRIPE_WIDTH + clippedPosX;
+                blitCmd->dstStartOffsetPx = (posY & STRIPE_PX_ROW_MASK)*STRIPE_WIDTH + clippedPosX;
                 blitCmd->numPxInDrawRow = numPxInDrawRow;
                 blitCmd->srcStridePx = PX_WIDTH;
                 blitCmd->numRows = numRows;
@@ -447,17 +237,144 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
 }
 
 
+uint uidiv(uint a, uint b) {
+    uint count = 0;
+    uint total = 0;
+    while (total < a) {
+        total += b;
+        count ++;
+    }
+    return count;
+}
+
+//======================================================================================================
+// Queue up commands to draw the given string at the given location
+//======================================================================================================
+STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourObj) {
+    int result = -1;
+    // check we actually have a font
+    if (currFontID != 0xff) {
+        result = 0; // don't return -1 if we _could_ have drawn it, but it was clipped
+
+        // decode parameters
+        uint8_t strLen = mp_obj_get_int(mp_obj_len(stringObj));
+        const char* str = mp_obj_str_get_str(stringObj);
+
+        mp_obj_tuple_t* pos = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(posTuple);
+        mp_int_t posX = mp_obj_get_int(pos->items[0]);
+        mp_int_t posY = mp_obj_get_int(pos->items[1]);
+
+        uint16_t colour = mp_obj_get_int(colourObj);
+
+        // get info for clipping
+        FontInfo* fontInfo = fontRegistry+currFontID;
+        uint16_t totalPxWidth = fontInfo->advanceX*strLen;
+
+        // check text would actually appear on-screen
+        if(posX < SCREEN_WIDTH && posX > -totalPxWidth && posY < SCREEN_HEIGHT && posY > -fontInfo->charPxH) {
+            // clip left and right to whole chars
+            // (the very idea of clipping within a char just makes me tired)
+            if (posX < 0) {
+                uint8_t numClipCharsLeft = uidiv(-posX, fontInfo->advanceX);
+                posX += numClipCharsLeft * fontInfo->advanceX;
+                str += numClipCharsLeft;
+                strLen -= numClipCharsLeft;
+            }
+
+
+            int16_t rightOverlap = (posX + totalPxWidth) - SCREEN_WIDTH;
+            if (rightOverlap > 0) {
+                uint16_t numClipCharsRight = uidiv(rightOverlap + fontInfo->charPxW, fontInfo->advanceX);
+                strLen -= numClipCharsRight;
+            }
+
+            // work out useful preliminaries
+            uint8_t stripeIdx = ((posY+STRIPE_HEIGHT) / STRIPE_HEIGHT) - 1; // need to add STRIPE_HEIGHT for correct rounding
+            uint8_t stripeRow = posY & STRIPE_PX_ROW_MASK;
+
+            // allocate space for command(s) and string
+            CmdText* textCmd = NULL;
+            CmdText* textCmd2 = NULL;
+
+            // calculate numRows to draw, clipping to bottom of stripe
+            uint8_t numRowsToDraw = fontInfo->charPxH;
+
+            // if first stripe is not off the top of the screen, allocate the command struct
+            if(stripeIdx >= 0) {
+               textCmd = (CmdText*)allocCmd(OPCODE_TEXT);
+            }
+
+            // if text would overlap into next stripe...
+            if (stripeRow + numRowsToDraw > STRIPE_HEIGHT) {
+                // adjust number of rows to draw
+                numRowsToDraw = STRIPE_HEIGHT - stripeRow;
+
+                // if second stripe is not off bottom of the screen, allocate the command struct 
+                if(stripeIdx+1 < NUM_STRIPES) {
+                    textCmd2 = (CmdText*)allocCmd(OPCODE_TEXT);
+                }
+            }
+
+            // allocate space for the characters
+            uint8_t* charCodes = alloc(strLen);
+
+            // fill out the first stripe's CmdText struct and enqueue it (if it's needed)
+            if(textCmd != NULL) {
+                textCmd->dstStartOffsetPx = stripeRow*STRIPE_WIDTH + posX;
+                textCmd->colour = colour;
+                textCmd->charStartRow = 0;
+                textCmd->charNumRows = numRowsToDraw;
+                textCmd->numChars = strLen;  
+                textCmd->fontID = currFontID;
+
+                // if we've got a second command, flag the extra string offset in numChars
+                if(textCmd2 != NULL) {
+                    //textCmd->numChars |= 0x80;
+                }
+
+                enqueueCmd(textCmd, stripeIdx);
+            }
+
+            // fill out second stripe's CmdText struce and enqueue it (if it's needed)
+            if(textCmd2 != NULL) {
+                // fill out the CmdText struct and enqueue it
+                textCmd2->dstStartOffsetPx = posX;
+                textCmd2->colour = colour;
+                textCmd2->charStartRow = numRowsToDraw;
+                textCmd2->charNumRows = fontInfo->charPxH - numRowsToDraw;
+                textCmd2->numChars = strLen;
+                textCmd2->fontID = currFontID;
+
+                enqueueCmd(textCmd2, stripeIdx+1);
+            }
+
+            // copy chars into command buffer
+            for(int index = 0; index < strLen; index++) {
+                uint8_t charCode = str[index] - fontInfo->firstCharCode;
+                // replace any invalid ones with SPACE
+                if(charCode > fontInfo->finalCharCode) {
+                    charCode = 0xff;
+                }
+                charCodes[index] = charCode;
+            }
+
+            // set return value to number of characters enqueued
+            result = strLen;
+        }
+    }
+
+    return mp_obj_new_int(result);
+}
+
+
 //======================================================================================================
 // Render all the enqueued commands for the given stripe into the given display stripe buffer 
 //======================================================================================================
 STATIC mp_obj_t renderStripe(mp_obj_t stripeIdxObj, mp_obj_t displayStripeObj) {
-    CmdBase* cmdPtr = stripeCmdQueueHead[mp_obj_get_int(stripeIdxObj)];
+    uint8_t stripeIdx = mp_obj_get_int(stripeIdxObj);
     mp_obj_array_t* displayStripeObjPtr = MP_OBJ_TO_PTR(displayStripeObj);
     uint16_t* displayStripe = (uint16_t*)(displayStripeObjPtr->items);
-    while(cmdPtr != NULL) {
-        executeCmd(cmdPtr, displayStripe);
-        cmdPtr = cmdPtr->nextPtr;
-    }
+    executeStripeCommands(stripeIdx, displayStripe);
     return mp_obj_new_int(0);
 }
 
@@ -469,48 +386,17 @@ STATIC mp_obj_t clearCmdQueue() {
     return mp_obj_new_int(0);
 }
 
-// //======================================================================================================
-// // not long to live: encode an RGBA2321 buffer to the BGR565 screen stripe
-// //======================================================================================================
-// STATIC mp_obj_t encode(mp_obj_t sourceBuff, mp_obj_t destBuff, mp_obj_t srcOffset) {
-//     mp_int_t srcOffsetInt = mp_obj_get_int(srcOffset);
-//     mp_obj_array_t* src = MP_OBJ_TO_PTR(sourceBuff);
-//     mp_obj_array_t* dst = MP_OBJ_TO_PTR(destBuff);
-//     unsigned char* srcItem = (unsigned char*)src->items + srcOffsetInt;
-//     unsigned char* dstItem = (unsigned char*)dst->items;
-//     unsigned char* beyondEndItem = dstItem + dst->len;
-//     while (dstItem < beyondEndItem) {
-//         unsigned short srcByte = *(srcItem++);
-//         unsigned short result = ((srcByte & 0x3) << 14) | ((srcByte & 0x1C) << 6) | ((srcByte & 0x0060) >> 2);
-        
-//         *(dstItem++) = result >> 8;
-//         *(dstItem++) = result & 0xff;
-//     }
-//     return src;
-// }
-
-// //======================================================================================================
-// // not long to live: clear an RGBA2321 buffer to the given colour
-// //======================================================================================================
-// STATIC mp_obj_t clear232(mp_obj_t buffer232, mp_obj_t colour232) {
-//     unsigned char colour = mp_obj_get_int(colour232) & 0xff;
-//     mp_obj_array_t* buf = MP_OBJ_TO_PTR(buffer232);
-//     unsigned char* bufItem = (unsigned char*)(buf->items);
-//     unsigned char* beyondEndItem = bufItem + buf->len;
-//     while(bufItem < beyondEndItem)
-//         *(bufItem++) = colour;
-//     return buffer232;
-// }
-
-
 
 
 
 // Define a Python reference to the function above
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(init_obj, init);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(setTransparentColour_obj, setTransparentColour);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(setFont_obj, setFont);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(addFont_obj, addFont);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(clear565_obj, clear565);
 STATIC MP_DEFINE_CONST_FUN_OBJ_3(blit32_obj, blit32);
+STATIC MP_DEFINE_CONST_FUN_OBJ_3(drawText_obj, drawText);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(renderStripe_obj, renderStripe);
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(clearCmdQueue_obj, clearCmdQueue);
 
@@ -526,15 +412,13 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     // Make the function available in the module's namespace
     mp_store_global(MP_QSTR_init, MP_OBJ_FROM_PTR(&init_obj));
     mp_store_global(MP_QSTR_setTransparentColour, MP_OBJ_FROM_PTR(&setTransparentColour_obj));
+    mp_store_global(MP_QSTR_setFont, MP_OBJ_FROM_PTR(&setFont_obj));
+    mp_store_global(MP_QSTR_addFont, MP_OBJ_FROM_PTR(&addFont_obj));
     mp_store_global(MP_QSTR_clear565, MP_OBJ_FROM_PTR(&clear565_obj));
     mp_store_global(MP_QSTR_blit32, MP_OBJ_FROM_PTR(&blit32_obj));
+    mp_store_global(MP_QSTR_drawText, MP_OBJ_FROM_PTR(&drawText_obj));
     mp_store_global(MP_QSTR_renderStripe, MP_OBJ_FROM_PTR(&renderStripe_obj));
     mp_store_global(MP_QSTR_clearCmdQueue, MP_OBJ_FROM_PTR(&clearCmdQueue_obj));
-
-
-
-    // mp_store_global(MP_QSTR_clear232, MP_OBJ_FROM_PTR(&clear232_obj));
-    // mp_store_global(MP_QSTR_encode, MP_OBJ_FROM_PTR(&encode_obj));
 
     // This must be last, it restores the globals dict
     MP_DYNRUNTIME_INIT_EXIT

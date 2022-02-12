@@ -5,7 +5,7 @@ MPY_DIR = ../../../../
 MOD = picante_c
 
 # Source files (.c or .py)
-SRC = picante_c.c 
+SRC = picante_c.c cmdQueue.c
 
 # Architecture to build for (x86, x64, armv7m, xtensa, xtensawin)
 ARCH = armv6m
