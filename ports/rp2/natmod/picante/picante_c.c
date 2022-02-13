@@ -6,32 +6,7 @@
 #include "py/nativeglue.h"
 
 #include "cmdQueue.h"
-
-
-
-
-
-
-
-//======================================================================================================
-// FontInfo registry
-//======================================================================================================
-#define MAX_FONTS (4)
-
-typedef struct _FontInfo {
-    uint8_t charPxW;
-    uint8_t charPxH;
-    uint8_t advanceX;
-    uint8_t advanceY;   // i.e. line-height
-    uint8_t firstCharCode;
-    uint8_t finalCharCode;
-    uint8_t* buffer;
-} FontInfo;
-
-FontInfo fontRegistry[MAX_FONTS];
-uint8_t numFonts;
-uint8_t currFontID;
-
+#include "font.h"
 
 
 //======================================================================================================
@@ -42,6 +17,7 @@ uint8_t currFontID;
 //======================================================================================================
 //======================================================================================================
 
+uint8_t currFontID;
 uint8_t transparentColour;
 
 
@@ -59,12 +35,9 @@ uint8_t transparentColour;
 //======================================================================================================
 STATIC mp_obj_t init() {
     transparentColour = 0xff;
-    numFonts = 0;
     currFontID = 0xff;
     resetCmdBuffer();
-    allocCmd(OPCODE_TEXT);
-    allocCmd(OPCODE_TEXT);
-    resetCmdBuffer();
+    resetFonts();
     return mp_obj_new_int(0);
 }
 
@@ -81,7 +54,7 @@ STATIC mp_obj_t setTransparentColour(mp_obj_t colourIndex) {
 //======================================================================================================
 STATIC mp_obj_t setFont(mp_obj_t fontIDObj) {
     uint8_t newFontID = mp_obj_get_int(fontIDObj);
-    if(newFontID < numFonts)
+    if(newFontID < getNumFonts())
         currFontID = newFontID;
     return NULL;
 }
@@ -91,13 +64,12 @@ STATIC mp_obj_t setFont(mp_obj_t fontIDObj) {
 //======================================================================================================
 STATIC mp_obj_t addFont(mp_obj_t fontInfoObj) {
     mp_obj_tuple_t* fontInfo = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(fontInfoObj);
-    uint8_t fontID = -1;
-    if(numFonts < MAX_FONTS) {
-        FontInfo* newFont = fontRegistry+numFonts;
-        fontID = (numFonts++);
+    uint8_t fontID = allocFont();
+    if(fontID != 0xff) {
         if(currFontID == 0xff) {
             currFontID = fontID;
         }
+        FontInfo* newFont = getFont(fontID);
         newFont->charPxW = mp_obj_get_int(fontInfo->items[0]);
         newFont->charPxH = mp_obj_get_int(fontInfo->items[1]);
         newFont->advanceX = mp_obj_get_int(fontInfo->items[2]);
@@ -267,7 +239,7 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
         uint16_t colour = mp_obj_get_int(colourObj);
 
         // get info for clipping
-        FontInfo* fontInfo = fontRegistry+currFontID;
+        FontInfo* fontInfo = getFont(currFontID);
         uint16_t totalPxWidth = fontInfo->advanceX*strLen;
 
         // check text would actually appear on-screen
