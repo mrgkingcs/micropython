@@ -263,7 +263,7 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
             }
 
             // work out useful preliminaries
-            uint8_t stripeIdx = ((posY+STRIPE_HEIGHT) / STRIPE_HEIGHT) - 1; // need to add STRIPE_HEIGHT for correct rounding of -ve posY
+            int8_t stripeIdx = ((posY+STRIPE_HEIGHT) / STRIPE_HEIGHT) - 1; // need to add STRIPE_HEIGHT for correct rounding of -ve posY
             uint8_t stripeRow = posY & STRIPE_PX_ROW_MASK;
 
             // allocate space for command(s) and string

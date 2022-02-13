@@ -41,9 +41,13 @@ def test():
     
     micropython.mem_info()
 
+    message = "Hello!"
+    pxLength = len(message)*4
+    pxHeight = 6
+    
     speed = 1
-    posX = -32
-    posY = -32
+    posX = -pxLength
+    posY = -pxHeight
     dirX = speed
     dirY = speed
 
@@ -57,12 +61,12 @@ def test():
         picante.clear(0xffe0)
         
         posX += dirX
-        if posX >= (SCR_WIDTH+32):
-            posX = -32
+        if posX >= (SCR_WIDTH+pxLength):
+            posX = -pxLength
 
         posY += dirY
-        if posY >= (SCR_HEIGHT+32):
-            posY = -32
+        if posY >= SCR_HEIGHT:
+            posY = -pxHeight
         
         
         picante.drawText("Hello!", posX, posY, 0xf800)
