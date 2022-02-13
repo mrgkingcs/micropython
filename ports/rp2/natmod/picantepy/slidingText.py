@@ -41,7 +41,7 @@ def test():
     
     micropython.mem_info()
 
-    speed = 3
+    speed = 1
     posX = -32
     posY = -32
     dirX = speed
@@ -65,7 +65,7 @@ def test():
             posY = -32
         
         
-        print(picante.drawText("Hello!", 200, 1, 0x0000))#posX, posY, 0xf800))
+        picante.drawText("Hello!", posX, posY, 0xf800)
 
         #print("draw()")
         picante.draw()

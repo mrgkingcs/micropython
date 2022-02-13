@@ -140,6 +140,7 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
             uint8_t* src = blitCmdPtr->srcBuf + (blitCmdPtr->srcStartOffsetPx>>1);
 
             if(blitCmdPtr->srcStartOffsetPx & 1) {
+                // blit first column pixels
                 blitHiCol(src, dst, blitCmdPtr);
 
                 blitCmdPtr->srcStartOffsetPx++;
@@ -169,17 +170,11 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 
             uint16_t* dst = displayStripe+textCmdPtr->dstStartOffsetPx;
 
-            uint8_t* chars = (uint8_t*)(textCmdPtr + 1);
+            uint8_t* chars = (uint8_t*)(textCmdPtr) + sizeof(CmdText);
             if(textCmdPtr->numChars & 0x80) {
                 chars += sizeof(CmdText);
             }
             FontInfo* fontInfo = getFont(textCmdPtr->fontID);
-
-            // uint8_t testGlyph[8];
-            // for(uint8_t idx = 0; idx < 8; idx += 2 )
-            //     testGlyph[idx] = 0x05;
-            // for(uint8_t idx = 1; idx < 8; idx += 2 )
-            //     testGlyph[idx] = 0x07;
 
             uint8_t numChars = textCmdPtr->numChars & 0x7f;
             for(int idx = 0; idx < numChars; idx++) {
@@ -192,10 +187,9 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
                         {
                             if((*glyph) & mask) {
                                 *rowDst = textCmdPtr->colour;
-                            } else {
+                            } /*else {
                                 *rowDst = 0xffff;
-                            }
-                            //rowDst += STRIPE_WIDTH;
+                            }*/
                             rowDst++;
                             mask <<= 1;
                         }
@@ -213,7 +207,7 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 
 
 
-uint8_t* commandBuffer[CMD_BUFF_SIZE] __attribute__ ((aligned (CMD_ALIGNMENT)));
+uint8_t commandBuffer[CMD_BUFF_SIZE] __attribute__ ((aligned (CMD_ALIGNMENT)));
 uint16_t nextFree;
 
 CmdBase* stripeCmdQueueHead[NUM_STRIPES];
@@ -233,7 +227,6 @@ void resetCmdBuffer() {
 //======================================================================================================
 // Allocate a piece of memory from the buffer
 //======================================================================================================
-
 void* alloc(uint16_t size) {
     void* result = NULL;
     size = (size+CMD_ALIGN_MASK) & (~CMD_ALIGN_MASK);

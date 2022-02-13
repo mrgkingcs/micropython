@@ -213,8 +213,8 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
 //======================================================================================================
 uint uidiv(uint a, uint b) {
     uint count = 0;
-    uint total = 0;
-    while (total < a) {
+    uint total = b;
+    while (total <= a) {
         total += b;
         count ++;
     }
@@ -226,6 +226,7 @@ uint uidiv(uint a, uint b) {
 //======================================================================================================
 STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourObj) {
     int result = -1;
+
     // check we actually have a font
     if (currFontID != 0xff) {
         result = 0; // don't return -1 if we _could_ have drawn it, but it was clipped
@@ -255,7 +256,6 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
                 strLen -= numClipCharsLeft;
             }
 
-
             int16_t rightOverlap = (posX + totalPxWidth) - SCREEN_WIDTH;
             if (rightOverlap > 0) {
                 uint16_t numClipCharsRight = uidiv(rightOverlap + fontInfo->charPxW, fontInfo->advanceX);
@@ -263,7 +263,7 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
             }
 
             // work out useful preliminaries
-            uint8_t stripeIdx = ((posY+STRIPE_HEIGHT) / STRIPE_HEIGHT) - 1; // need to add STRIPE_HEIGHT for correct rounding
+            uint8_t stripeIdx = ((posY+STRIPE_HEIGHT) / STRIPE_HEIGHT) - 1; // need to add STRIPE_HEIGHT for correct rounding of -ve posY
             uint8_t stripeRow = posY & STRIPE_PX_ROW_MASK;
 
             // allocate space for command(s) and string
@@ -290,7 +290,7 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
             }
 
             // allocate space for the characters
-            uint8_t* charCodes = alloc(strLen);
+            uint8_t* charCodes = (uint8_t*)alloc(strLen);
 
             // fill out the first stripe's CmdText struct and enqueue it (if it's needed)
             if(textCmd != NULL) {
