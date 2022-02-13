@@ -208,7 +208,9 @@ STATIC mp_obj_t blit32(mp_obj_t srcBuf32x32, mp_obj_t posTuple, mp_obj_t palette
     return mp_obj_new_int(result);
 }
 
-
+//======================================================================================================
+// do unsigned int division because micropython doesn't link it properly!
+//======================================================================================================
 uint uidiv(uint a, uint b) {
     uint count = 0;
     uint total = 0;
@@ -301,7 +303,7 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
 
                 // if we've got a second command, flag the extra string offset in numChars
                 if(textCmd2 != NULL) {
-                    //textCmd->numChars |= 0x80;
+                    textCmd->numChars |= 0x80;
                 }
 
                 enqueueCmd(textCmd, stripeIdx);

@@ -1,5 +1,6 @@
 
 #include "cmdQueue.h"
+#include "font.h"
 
 
 //======================================================================================================
@@ -164,35 +165,45 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
 
         case OPCODE_TEXT:
         {
-            // CmdText* textCmdPtr = (CmdText*)cmdPtr;
+            CmdText* textCmdPtr = (CmdText*)cmdPtr;
 
-            // uint16_t* dst = displayStripe+textCmdPtr->dstStartOffsetPx;
-            // uint8_t* chars = (uint8_t*)(textCmdPtr + 1);
-            // if(textCmdPtr->numChars & 0x80) {
-            //     chars += sizeof(CmdText);
-            // }
-            // FontInfo* fontInfo = fontRegistry+textCmdPtr->fontID;
+            uint16_t* dst = displayStripe+textCmdPtr->dstStartOffsetPx;
 
-            // uint8_t numChars = textCmdPtr->numChars & 0x7f;
-            // for(int idx = 0; idx < numChars; idx++) {
-            //     if(chars[idx] != 0xff) {
-            //         uint8_t* glyph = fontInfo->buffer + chars[idx]*fontInfo->charPxH + textCmdPtr->charStartRow;
-            //         for(int row = 0; row < textCmdPtr->charNumRows; row++) {
-            //             uint8_t mask = 1;
-            //             uint16_t* rowDst = dst;
-            //             for(int col = 0; col < fontInfo->charPxW; col++)
-            //             {
-            //                 if(*glyph & mask) {
-            //                     *rowDst = textCmdPtr->colour;
-            //                 }
-            //                 rowDst += STRIPE_WIDTH;
-            //                 mask <<= 1;
-            //             }
-            //             glyph++;
-            //         }
-            //     }
-            //     dst += fontInfo->advanceX;
-            // }
+            uint8_t* chars = (uint8_t*)(textCmdPtr + 1);
+            if(textCmdPtr->numChars & 0x80) {
+                chars += sizeof(CmdText);
+            }
+            FontInfo* fontInfo = getFont(textCmdPtr->fontID);
+
+            // uint8_t testGlyph[8];
+            // for(uint8_t idx = 0; idx < 8; idx += 2 )
+            //     testGlyph[idx] = 0x05;
+            // for(uint8_t idx = 1; idx < 8; idx += 2 )
+            //     testGlyph[idx] = 0x07;
+
+            uint8_t numChars = textCmdPtr->numChars & 0x7f;
+            for(int idx = 0; idx < numChars; idx++) {
+                if(chars[idx] != 0xff) {
+                    uint8_t* glyph = fontInfo->buffer + chars[idx]*fontInfo->charPxH + textCmdPtr->charStartRow;
+                    for(int row = 0; row < textCmdPtr->charNumRows; row++) {
+                        uint8_t mask = 1;
+                        uint16_t* rowDst = dst+row*STRIPE_WIDTH;
+                        for(int col = 0; col < fontInfo->charPxW; col++)
+                        {
+                            if((*glyph) & mask) {
+                                *rowDst = textCmdPtr->colour;
+                            }/* else {
+                                *rowDst = 0xf800;
+                            }*/
+                            //rowDst += STRIPE_WIDTH;
+                            rowDst++;
+                            mask <<= 1;
+                        }
+                        glyph++;
+                    }
+                }
+                dst += fontInfo->advanceX;
+            }
         }
         break;
     }
@@ -225,7 +236,7 @@ void resetCmdBuffer() {
 
 void* alloc(uint16_t size) {
     void* result = NULL;
-    size = 32;//(size+CMD_ALIGN_MASK) & (~CMD_ALIGN_MASK);
+    size = (size+CMD_ALIGN_MASK) & (~CMD_ALIGN_MASK);
     if(nextFree+size < CMD_BUFF_SIZE) {
          result = (void*)(commandBuffer+nextFree);
          nextFree += size;
@@ -246,14 +257,16 @@ CmdBase* allocCmd(uint16_t opCode) {
 // Enqueue a command for the given stripe
 //======================================================================================================
 void enqueueCmd(void* cmdPtr, uint8_t stripeIdx) {
-    CmdBase* cmd = (CmdBase*)cmdPtr;
-    cmd->nextPtr = NULL;
-    if (stripeCmdQueueHead[stripeIdx] == NULL) {
-        stripeCmdQueueHead[stripeIdx] = cmd;
-        stripeCmdQueueTail[stripeIdx] = cmd;
-    } else {
-        stripeCmdQueueTail[stripeIdx]->nextPtr = cmd;
-        stripeCmdQueueTail[stripeIdx] = cmd;
+    if(stripeIdx < NUM_STRIPES) {
+        CmdBase* cmd = (CmdBase*)cmdPtr;
+        cmd->nextPtr = NULL;
+        if (stripeCmdQueueHead[stripeIdx] == NULL) {
+            stripeCmdQueueHead[stripeIdx] = cmd;
+            stripeCmdQueueTail[stripeIdx] = cmd;
+        } else {
+            stripeCmdQueueTail[stripeIdx]->nextPtr = cmd;
+            stripeCmdQueueTail[stripeIdx] = cmd;
+        }
     }
 }
 

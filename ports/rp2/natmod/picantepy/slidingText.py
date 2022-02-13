@@ -65,7 +65,7 @@ def test():
             posY = -32
         
         
-        print(picante.drawText("Hello!", posX, posY, 0xffff))
+        print(picante.drawText("Hello!", 200, 4, 0x0000))#posX, posY, 0xf800))
 
         #print("draw()")
         picante.draw()
