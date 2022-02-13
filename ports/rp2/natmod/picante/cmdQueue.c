@@ -192,9 +192,9 @@ void executeCmd(CmdBase* cmdPtr, uint16_t* displayStripe) {
                         {
                             if((*glyph) & mask) {
                                 *rowDst = textCmdPtr->colour;
-                            }/* else {
-                                *rowDst = 0xf800;
-                            }*/
+                            } else {
+                                *rowDst = 0xffff;
+                            }
                             //rowDst += STRIPE_WIDTH;
                             rowDst++;
                             mask <<= 1;

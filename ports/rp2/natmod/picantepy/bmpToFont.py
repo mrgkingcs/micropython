@@ -46,13 +46,14 @@ imWidthPx, imHeightPx = im.size
 numCharsWide = imWidthPx // advance[0]
 numCharsHigh = imHeightPx // advance[1]
 
-charRowStride = imWidthPx*advance[0]
+charRowStride = imWidthPx*advance[1]
+print(charRowStride)
 
 for charRowIdx in range(0, numCharsHigh):
     for charColIdx  in range(0, numCharsWide):
-        pxIndex = charRowIdx*charRowStride + charColIdx*charSizePx[0]
+        pxIndex = charRowIdx*charRowStride + charColIdx*advance[0]
 
-        for rowPxIndex in range(pxIndex, pxIndex+charRowStride, imWidthPx):
+        for rowPxIndex in range(pxIndex, pxIndex+imWidthPx*charSizePx[1], imWidthPx):
             currByte = 0
             bitValue = 1
             for px in pxBytes[rowPxIndex:rowPxIndex+charSizePx[0]]:
