@@ -250,7 +250,7 @@ STATIC mp_obj_t drawText(mp_obj_t stringObj, mp_obj_t posTuple, mp_obj_t colourO
             // clip left and right to whole chars
             // (the very idea of clipping within a char just makes me tired)
             if (posX < 0) {
-                uint8_t numClipCharsLeft = uidiv(-posX, fontInfo->advanceX);
+                uint8_t numClipCharsLeft = uidiv(-posX, fontInfo->advanceX)+1;
                 posX += numClipCharsLeft * fontInfo->advanceX;
                 str += numClipCharsLeft;
                 strLen -= numClipCharsLeft;

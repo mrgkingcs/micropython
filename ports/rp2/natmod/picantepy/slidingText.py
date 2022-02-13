@@ -58,7 +58,7 @@ def test():
     for frame in range(0,numFrames):
         #print("Frame:",frame)
         #print("clear()")
-        picante.clear(0xffe0)
+        picante.clear(0xffff)
         
         posX += dirX
         if posX >= (SCR_WIDTH+pxLength):
