@@ -25,15 +25,17 @@ uint8_t transparentColour;
 //======================================================================================================
 //======================================================================================================
 //
-// Micropython interface
+//
+//  Graphics system internals
+//
 //
 //======================================================================================================
 //======================================================================================================
 
 //======================================================================================================
-// Initialise the system
+// Initialise the graphics system
 //======================================================================================================
-STATIC mp_obj_t init() {
+STATIC mp_obj_t initGraphics() {
     transparentColour = 0xff;
     currFontID = 0xff;
     resetCmdBuffer();
@@ -361,10 +363,34 @@ STATIC mp_obj_t clearCmdQueue() {
 }
 
 
+//======================================================================================================
+//======================================================================================================
+//
+//
+//  Audio system internals
+//
+//
+//======================================================================================================
+//======================================================================================================
+
+//======================================================================================================
+// Fill the given buffer with the next audio samples
+//======================================================================================================
+STATIC mp_obj_t synthFillBuffer(mp_obj_t bufferObj) {
+    mp_obj_tuple_t* buffer = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(bufferObj);
+    uint16_t numSamples = buffer->len >> 1;
+    uint16_t* dstSample = (uint16_t*)(buffer->items);
+
+    for(int count = 0; count < numSamples; count++)
+        *(dstSample++) = 0;
+
+    return mp_obj_new_int(0);
+}
 
 
-// Define a Python reference to the function above
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(init_obj, init);
+
+// Define a Python reference to the functions above
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(initGraphics_obj, initGraphics);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(setTransparentColour_obj, setTransparentColour);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(setFont_obj, setFont);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(addFont_obj, addFont);
@@ -373,6 +399,9 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_3(blit32_obj, blit32);
 STATIC MP_DEFINE_CONST_FUN_OBJ_3(drawText_obj, drawText);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(renderStripe_obj, renderStripe);
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(clearCmdQueue_obj, clearCmdQueue);
+
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(synthFillBuffer_obj, synthFillBuffer);
+
 
 
 // STATIC MP_DEFINE_CONST_FUN_OBJ_2(clear232_obj, clear232);
@@ -384,7 +413,7 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     MP_DYNRUNTIME_INIT_ENTRY
 
     // Make the function available in the module's namespace
-    mp_store_global(MP_QSTR_init, MP_OBJ_FROM_PTR(&init_obj));
+    mp_store_global(MP_QSTR_initGraphics, MP_OBJ_FROM_PTR(&initGraphics_obj));
     mp_store_global(MP_QSTR_setTransparentColour, MP_OBJ_FROM_PTR(&setTransparentColour_obj));
     mp_store_global(MP_QSTR_setFont, MP_OBJ_FROM_PTR(&setFont_obj));
     mp_store_global(MP_QSTR_addFont, MP_OBJ_FROM_PTR(&addFont_obj));
@@ -393,6 +422,8 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_drawText, MP_OBJ_FROM_PTR(&drawText_obj));
     mp_store_global(MP_QSTR_renderStripe, MP_OBJ_FROM_PTR(&renderStripe_obj));
     mp_store_global(MP_QSTR_clearCmdQueue, MP_OBJ_FROM_PTR(&clearCmdQueue_obj));
+
+    mp_store_global(MP_QSTR_synthFillBuffer, MP_OBJ_FROM_PTR(&synthFillBuffer_obj));
 
     // This must be last, it restores the globals dict
     MP_DYNRUNTIME_INIT_EXIT

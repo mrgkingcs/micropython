@@ -49,7 +49,7 @@ def test():
 
     start = ticks_ms()
 
-    numFrames = 100
+    numFrames = 1000
 
     for frame in range(0,numFrames):
         #print("Frame:",frame)
