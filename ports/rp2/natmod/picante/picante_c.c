@@ -373,16 +373,81 @@ STATIC mp_obj_t clearCmdQueue() {
 //======================================================================================================
 //======================================================================================================
 
+#define SAMPLE_RATE 16000
+#define LUT_SIZE 17
+#define INTERP_BITS 11
+#define INTERP_MASK ((1<<INTERP_BITS)-1)
+int16_t sineLUT[LUT_SIZE]; 
+
+uint32_t globalPhase; // just until proper instruments/timing is set up
+
+//======================================================================================================
+// Get sine (-32767 -> 32767) value for 'phase' (0 -> 65535)
+//======================================================================================================
+int16_t sine(uint16_t phase) {
+    uint16_t idx = (phase >> INTERP_BITS) & 0xf;
+    int32_t delta = sineLUT[idx+1] - sineLUT[idx];
+    int32_t interp = phase & INTERP_MASK;
+    int32_t interpDelta = delta*interp;
+    int16_t value = sineLUT[idx] + (interpDelta>>INTERP_BITS);
+    if (phase & 0x8000) {
+        value = -value;
+    }
+    return value;
+}
+
+// void *memcpy(void *restrict s1, const void *restrict s2, size_t n) {
+//   char *c1 = (char *)s1;
+//   const char *c2 = (const char *)s2;
+//   for (size_t i = 0; i < n; ++i)
+//     c1[i] = c2[i];
+//   return s1;
+// }
+//======================================================================================================
+// Initialise the audio internals
+//======================================================================================================
+STATIC mp_obj_t initAudio() {
+    // initialise sine look-up table
+    sineLUT[ 0] = 0;
+    sineLUT[ 1] = 6392;
+    sineLUT[ 2] = 12539;
+    sineLUT[ 3] = 18204;
+    sineLUT[ 4] = 23169;
+    sineLUT[ 5] = 27244;
+    sineLUT[ 6] = 30272;
+    sineLUT[ 7] = 32137;
+    sineLUT[ 8] = 32767;
+    sineLUT[ 9] = 32137;
+    sineLUT[10] = 30272;
+    sineLUT[11] = 27244;
+    sineLUT[12] = 23169;
+    sineLUT[13] = 18204;
+    sineLUT[14] = 12539;
+    sineLUT[15] = 6392;
+    sineLUT[16] = 0;
+
+    globalPhase = 0;
+
+    return mp_obj_new_int(0);
+}
+
 //======================================================================================================
 // Fill the given buffer with the next audio samples
 //======================================================================================================
 STATIC mp_obj_t synthFillBuffer(mp_obj_t bufferObj) {
-    mp_obj_tuple_t* buffer = (mp_obj_tuple_t*)MP_OBJ_TO_PTR(bufferObj);
-    uint16_t numSamples = buffer->len >> 1;
-    uint16_t* dstSample = (uint16_t*)(buffer->items);
+    mp_obj_array_t* buffer = (mp_obj_array_t*)MP_OBJ_TO_PTR(bufferObj);
+    int8_t* dstSample = (int8_t*)(buffer->items);
+    int8_t* beyondEnd = dstSample + buffer->len;
 
-    for(int count = 0; count < numSamples; count++)
-        *(dstSample++) = 0;
+    uint32_t deltaPhase = (220<<16) / SAMPLE_RATE;  // in fractions of a cycle (0-1) per sample interval
+    deltaPhase <<= 16;  // in 'phase' (0->65535) per sample interval
+
+    while(dstSample < beyondEnd) {
+        uint16_t value = sine(globalPhase>>16) >> 1;
+        *(dstSample++) = value & 0xff;
+        *(dstSample++) = value>>8;
+        globalPhase += deltaPhase;
+    }
 
     return mp_obj_new_int(0);
 }
@@ -400,6 +465,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_3(drawText_obj, drawText);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(renderStripe_obj, renderStripe);
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(clearCmdQueue_obj, clearCmdQueue);
 
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(initAudio_obj, initAudio);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(synthFillBuffer_obj, synthFillBuffer);
 
 
@@ -423,6 +489,7 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_renderStripe, MP_OBJ_FROM_PTR(&renderStripe_obj));
     mp_store_global(MP_QSTR_clearCmdQueue, MP_OBJ_FROM_PTR(&clearCmdQueue_obj));
 
+    mp_store_global(MP_QSTR_initAudio, MP_OBJ_FROM_PTR(&initAudio_obj));
     mp_store_global(MP_QSTR_synthFillBuffer, MP_OBJ_FROM_PTR(&synthFillBuffer_obj));
 
     // This must be last, it restores the globals dict

@@ -1,3 +1,4 @@
+from micropython import schedule
 from ili9341 import Display, color565
 from machine import Pin, SPI, I2S
 import picante_c
@@ -50,7 +51,7 @@ def initGraphics(sck, mosi, dc, cs, rst, rotation):
 def cleanupGraphics():
     global spi, display, displayStripe, renderBuffer
 
-    display.cleanupGraphics()
+    display.cleanup()
     display = None
 
     spi = None
@@ -217,6 +218,7 @@ SYNTH_BUFFER_BYTES = 1024
 # globals
 audioOut = None
 synthBuffer = None
+playingBufferIdx = 0
 
 ####################################################################################
 #
@@ -228,7 +230,7 @@ synthBuffer = None
 #
 ####################################################################################
 def initAudio(bclk, wsel, din):
-    global audioOut
+    global audioOut, synthBuffer, playingBufferIdx
     audioOut = I2S(
         I2D_ID,
         sck=Pin(bclk),
@@ -240,8 +242,14 @@ def initAudio(bclk, wsel, din):
         rate=SAMPLE_RATE_HZ,
         ibuf=I2S_BUFFER_BYTES
     )
-    synthByffer = bytes(SYNTH_BUFFER_BYTES)
-    audioOut.irq = i2s_callback
+    audioOut.irq(i2s_callback)
+
+    synthBuffer = bytearray(SYNTH_BUFFER_BYTES)
+    playingBufferIdx = 0
+    audioOut.write(synthBuffer)
+
+    picante_c.initAudio()
+
 
 ####################################################################################
 #
@@ -250,6 +258,7 @@ def initAudio(bclk, wsel, din):
 ####################################################################################
 def cleanupAudio():
     global audioOut, synthBuffer
+    audioOut.deinit()
     audioOut = None
     synthBuffer = None
 
@@ -259,5 +268,15 @@ def cleanupAudio():
 #
 ####################################################################################
 def i2s_callback(arg):
-    picante_c.synthFillBuffer(synthBuffer)
+    global audioOut, synthBuffer, playingBufferIdx
     audioOut.write(synthBuffer)
+    picante_c.synthFillBuffer(synthBuffer)
+    
+
+####################################################################################
+#
+# callback to fill out next buffer
+#
+####################################################################################
+def fillBuffer(bufferIdx):
+    picante_c.synthFillBuffer(synthBuffer[bufferIdx])

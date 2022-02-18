@@ -65,7 +65,7 @@ else:  # assume 32 bits
 sineLUT = []
 for idx in range(0,16):
     sineLUT.append( int(math.sin(math.pi*idx/16)*32767) )
-    #print(sineLUT[idx])
+    print(sineLUT[idx])
 sineLUT.append(0)
 
 interpMask = (1<<11)-1
