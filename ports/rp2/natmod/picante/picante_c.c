@@ -374,6 +374,10 @@ STATIC mp_obj_t clearCmdQueue() {
 //======================================================================================================
 
 #define SAMPLE_RATE 16000
+#define MAX_SAMPLE_VALUE ((int16_t)32767)
+#define MIN_SAMPLE_VALUE ((int16_t)-32768)
+#define NUM_VOICES (4)
+
 #define LUT_SIZE 17
 #define INTERP_BITS 11
 #define INTERP_MASK ((1<<INTERP_BITS)-1)
@@ -382,7 +386,31 @@ int16_t sineLUT[LUT_SIZE];
 uint32_t globalPhase; // just until proper instruments/timing is set up
 
 //======================================================================================================
-// Get sine (-32767 -> 32767) value for 'phase' (0 -> 65535)
+//  Structure to hold current state of a synth voice
+//======================================================================================================
+typedef struct _Voice {
+    int16_t (*waveform)(uint16_t phase);    // waveform function
+    uint32_t phaseFP;                       // in 16:16 fixed point (1 cycle is 0:0 -> 65535:65535)
+    uint32_t phasePerTickFP;                // in 16:16 fixed point (1 cycle is 0:0 -> 65535:65535)
+
+    int16_t envelopeCurrAmplitude;          // 0 to 32767 (negative values ignored)
+    int16_t envelopeDeltaPerTick;           // how much to change the envelope by each sample
+    uint16_t envelopePhaseTicks;            // top two bits=envelope phase
+                                            // (00=A,01=R,10=S,11=D) => 0 = start playing; 0xffff = not playing
+                                            // low 14 bits are no. of samples elapsed since phase start 
+    uint16_t baseAmplitude;                 // 0 to 32767
+
+
+    uint8_t attackTime;                     // in units of 64 samples (roughly 1/256th of a second)
+    uint8_t releaseTime;                    // in units of 64 samples (roughly 1/256th of a second)
+    uint8_t sustainLevel;                   // in 1/256ths of full amplitude
+    uint8_t decayTime;                      // in units of 1024 samples (roughly 1/256th of a second)
+} Voice;
+
+Voice voices[NUM_VOICES];
+
+//======================================================================================================
+// Get sine waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)
 //======================================================================================================
 int16_t sine(uint16_t phase) {
     uint16_t idx = (phase >> INTERP_BITS) & 0xf;
@@ -396,13 +424,72 @@ int16_t sine(uint16_t phase) {
     return value;
 }
 
-// void *memcpy(void *restrict s1, const void *restrict s2, size_t n) {
-//   char *c1 = (char *)s1;
-//   const char *c2 = (const char *)s2;
-//   for (size_t i = 0; i < n; ++i)
-//     c1[i] = c2[i];
-//   return s1;
-// }
+//======================================================================================================
+// Get square waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)
+//======================================================================================================
+int16_t square(uint16_t phase) {
+    return (phase & 0x8000) ? MAX_SAMPLE_VALUE : MIN_SAMPLE_VALUE;
+}
+
+//======================================================================================================
+// Get triangle waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)
+//======================================================================================================
+int16_t triangle(uint16_t phase) {
+    int16_t subPhase = (phase&0x3fff)<<1;
+    switch(phase >> 14) {
+        case 0b00:  return subPhase;
+        case 0b01:  return MAX_SAMPLE_VALUE - subPhase;
+        case 0b10:  return -subPhase;
+        case 0b11:  return MIN_SAMPLE_VALUE + subPhase;
+    }
+    return 0;   // should never reach this
+}
+
+
+//======================================================================================================
+// Get sawtooth waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)
+//======================================================================================================
+int16_t sawtooth(uint16_t phase) {
+    return (phase & 0x8000) ? (phase & 0x7fff) : MIN_SAMPLE_VALUE + (phase & 0x7fff);
+}
+
+//======================================================================================================
+// Returns true if the given voice should be added to the playback buffer
+//======================================================================================================
+bool voiceIsPlaying(uint voiceIdx) {
+    return (voices[voiceIdx].envelopePhaseTicks != 0xffff);
+}
+
+//======================================================================================================
+// Get the next sample from the given voice
+//======================================================================================================
+int16_t voiceGetSample(Voice* voice) {
+    return 0;
+}
+
+//======================================================================================================
+// Synthesise 16bpp samples from voice and mix into given buffer
+//======================================================================================================
+void voiceMixToBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples) {
+    int16_t* currSample = buffer;
+    int16_t* beyondEnd = buffer + numSamples;
+    while(currSample < beyondEnd) {
+        int16_t mixValue = *currSample;
+        *(currSample++) = mixValue + voiceGetSample(voice);
+    }
+}
+
+//======================================================================================================
+// Synthesise 16bpp samples from voice overwriting given buffer
+//======================================================================================================
+void voiceSetBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples) {
+    int16_t* currSample = buffer;
+    int16_t* beyondEnd = buffer + numSamples;
+    while(currSample < beyondEnd) {
+        *(currSample++) = voiceGetSample(voice);
+    }
+}
+
 //======================================================================================================
 // Initialise the audio internals
 //======================================================================================================
@@ -426,7 +513,7 @@ STATIC mp_obj_t initAudio() {
     sineLUT[15] = 6392;
     sineLUT[16] = 0;
 
-    globalPhase = 0;
+
 
     return mp_obj_new_int(0);
 }
@@ -436,23 +523,78 @@ STATIC mp_obj_t initAudio() {
 //======================================================================================================
 STATIC mp_obj_t synthFillBuffer(mp_obj_t bufferObj) {
     mp_obj_array_t* buffer = (mp_obj_array_t*)MP_OBJ_TO_PTR(bufferObj);
-    int8_t* dstSample = (int8_t*)(buffer->items);
-    int8_t* beyondEnd = dstSample + buffer->len;
 
-    uint32_t deltaPhase = (220<<16) / SAMPLE_RATE;  // in fractions of a cycle (0-1) per sample interval
-    deltaPhase <<= 16;  // in 'phase' (0->65535) per sample interval
-
-    while(dstSample < beyondEnd) {
-        uint16_t value = sine(globalPhase>>16) >> 1;
-        *(dstSample++) = value & 0xff;
-        *(dstSample++) = value>>8;
-        globalPhase += deltaPhase;
+    bool bufferCleared = false;
+    for(uint voiceIdx = 0; voiceIdx < NUM_VOICES; voiceIdx++) {
+        if(voiceIsPlaying(voiceIdx)) {
+            if(!bufferCleared) {
+                voiceSetBuffer(voices+voiceIdx, (int16_t*)buffer->items, buffer->len>>1);
+                bufferCleared = true;
+            } else {
+                voiceMixToBuffer(voices+voiceIdx, (int16_t*)buffer->items, buffer->len>>1);
+            }
+        }
     }
+
+    if(!bufferCleared) {
+        int32_t* dst = (int32_t*)(buffer->items);
+        int32_t* beyondEnd = dst + (buffer->len>>2);
+        while(dst < beyondEnd) {
+            *(dst++) = 0;
+        }
+    }
+    // int8_t* dstSample = (int8_t*)(buffer->items);
+    // int8_t* beyondEnd = dstSample + buffer->len;
+
+    // uint32_t deltaPhase = (220<<16) / SAMPLE_RATE;  // in fractions of a cycle (0-1) per sample interval
+    // deltaPhase <<= 16;  // in 'phase' (0->65535) per sample interval
+
+    // while(dstSample < beyondEnd) {
+    //     uint16_t value = sine(globalPhase>>16) >> 1;
+    //     *(dstSample++) = value & 0xff;
+    //     *(dstSample++) = value>>8;
+    //     globalPhase += deltaPhase;
+    // }
 
     return mp_obj_new_int(0);
 }
 
+//======================================================================================================
+// Set the waveform of the given voice
+//  0 = sine, 1 = square, 2 = triangle, 3 = sawtooth, 4 = noise
+//======================================================================================================
+STATIC mp_obj_t setWaveform(mp_obj_t voiceIdxObj, mp_obj_t waveformIDObj) {
+    return mp_obj_new_int(0);
+}
 
+//======================================================================================================
+// Set the base amplitude of the given voice
+//======================================================================================================
+STATIC mp_obj_t setAmplitude(mp_obj_t voiceIdxObj, mp_obj_t amplitudeObj) {
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the frequency of the note (as phasePerTick)
+// Python code can convert between freq and phasePerTick
+//======================================================================================================
+STATIC mp_obj_t setPhasePerTick(mp_obj_t voiceIdxObj, mp_obj_t phasePerTickObj) {
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the envelope values of the voice (tuple of attack, release, sustain, decay)
+//======================================================================================================
+STATIC mp_obj_t setEnvelope(mp_obj_t voiceIdxObj, mp_obj_t envelopeTupleObj) {
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the voive playing a new note
+//======================================================================================================
+STATIC mp_obj_t playVoice(mp_obj_t voiceIdxObj) {
+    return mp_obj_new_int(0);
+}
 
 // Define a Python reference to the functions above
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(initGraphics_obj, initGraphics);
@@ -467,6 +609,11 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(clearCmdQueue_obj, clearCmdQueue);
 
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(initAudio_obj, initAudio);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(synthFillBuffer_obj, synthFillBuffer);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(setWaveform_obj, setWaveform);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(setAmplitude_obj, setAmplitude);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(setPhasePerTick_obj, setPhasePerTick);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(setEnvelope_obj, setEnvelope);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(playVoice_obj, playVoice);
 
 
 
@@ -491,6 +638,11 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
 
     mp_store_global(MP_QSTR_initAudio, MP_OBJ_FROM_PTR(&initAudio_obj));
     mp_store_global(MP_QSTR_synthFillBuffer, MP_OBJ_FROM_PTR(&synthFillBuffer_obj));
+    mp_store_global(MP_QSTR_setWaveform, MP_OBJ_FROM_PTR(&setWaveform_obj));
+    mp_store_global(MP_QSTR_setAmplitude, MP_OBJ_FROM_PTR(&setAmplitude_obj));
+    mp_store_global(MP_QSTR_setPhasePerTick, MP_OBJ_FROM_PTR(&setPhasePerTick_obj));
+    mp_store_global(MP_QSTR_setEnvelope, MP_OBJ_FROM_PTR(&setEnvelope_obj));
+    mp_store_global(MP_QSTR_playVoice, MP_OBJ_FROM_PTR(&playVoice_obj));
 
     // This must be last, it restores the globals dict
     MP_DYNRUNTIME_INIT_EXIT
