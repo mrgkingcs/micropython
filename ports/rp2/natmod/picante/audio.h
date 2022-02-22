@@ -18,6 +18,13 @@
 #define MAX_SAMPLE_VALUE ((int16_t)32767)
 #define MIN_SAMPLE_VALUE ((int16_t)-32768)
 #define NUM_VOICES (4)
+
+#define WAVEFORM_SINE (0)
+#define WAVEFORM_SQUARE (1)
+#define WAVEFORM_TRIANGLE (2)
+#define WAVEFORM_SAWTOOTH (3)
+#define WAVEFORM_NOISE (4)
+
 #define NUM_WAVEFORMS (5)
 
 #define LUT_SIZE 17
@@ -71,6 +78,11 @@ void setupSineLUT();
 // Set up the waveform function look-up table
 //======================================================================================================
 void setupWaveformLUT();
+
+//======================================================================================================
+// Set up the noise waveform
+//======================================================================================================
+void setupNoiseWaveformTable();
 
 //======================================================================================================
 // Get sine waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)

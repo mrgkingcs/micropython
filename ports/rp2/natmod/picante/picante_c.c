@@ -380,6 +380,7 @@ STATIC mp_obj_t initAudio() {
     initVoices();
     setupSineLUT();
     setupWaveformLUT();
+    setupNoiseWaveformTable();
 
     return mp_obj_new_int(0);
 }

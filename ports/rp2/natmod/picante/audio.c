@@ -3,6 +3,8 @@
 
 int16_t sineLUT[LUT_SIZE]; 
 int16_t (*waveformFuncs[NUM_WAVEFORMS])(uint16_t phase);
+uint32_t noiseWaveformState;
+uint16_t noiseWaveformNextPhase;
 
 Voice voices[NUM_VOICES];
 
@@ -58,6 +60,13 @@ void setupWaveformLUT() {
     waveformFuncs[4] = &noise;
 }
 
+//======================================================================================================
+// Set up the noise waveform
+//======================================================================================================
+void setupNoiseWaveformTable() {
+    noiseWaveformState = 0x7ffff8;
+    noiseWaveformNextPhase = 0;
+}
 
 //======================================================================================================
 //======================================================================================================
@@ -113,9 +122,31 @@ int16_t sawtooth(uint16_t phase) {
 
 //======================================================================================================
 // Get noise waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)
+//  I owe a great deal to this site: http://www.sidmusic.org/sid/sidtech5.html
+//  The clunky way I've implemented this means that it will misbehave if more than one voice
+//  is set to the 'noise' waveform. :/
 //======================================================================================================
 int16_t noise(uint16_t phase) {
-    return 0x7fff;
+    int16_t result;
+
+    if( phase >= noiseWaveformNextPhase) {
+        noiseWaveformNextPhase += 128;
+        uint32_t newBit = (noiseWaveformState >> 22);
+        newBit ^= (noiseWaveformState >> 17);
+        noiseWaveformState = noiseWaveformState << 1 | (newBit & 1);
+    }
+
+    result =    ((noiseWaveformState >> 7) & (1<<15)) |
+                ((noiseWaveformState >> 6) & (1<<14)) |
+                ((noiseWaveformState >> 3) & (1<<13)) |
+                ((noiseWaveformState << 1) & (1<<12)) |
+                ((noiseWaveformState     ) & (1<<11)) |
+                ((noiseWaveformState << 3) & (1<<10)) |
+                ((noiseWaveformState << 5) & (1<< 9)) |
+                ((noiseWaveformState << 6) & (1<< 8))
+            ;
+
+    return result;
 }
 
 //======================================================================================================
@@ -135,6 +166,7 @@ bool voiceIsPlaying(uint8_t voiceIdx) {
 
 //======================================================================================================
 // Sets the waveform for the given voice
+//  0 = sine, 1 = square, 2 = triangle, 3 = sawtooth, 4 = noise
 //======================================================================================================
 void setWaveform_(uint8_t voiceIdx, uint8_t waveformID) {
     voices[voiceIdx].waveform = waveformFuncs[waveformID];
@@ -183,6 +215,9 @@ void playVoice_(uint8_t voiceIdx)  {
     voice->phaseFP = 0;
     voice->prevEnvelopeFP = 0;
     voice->state = STATE_ATTACK;
+    if(voice->waveform == &noise) {
+        noiseWaveformNextPhase = 0;
+    }
 }
 
 //======================================================================================================
@@ -219,7 +254,7 @@ uint16_t getEnvelope(Voice* voice) {
     } else if (voice->state == STATE_DECAY) {
         voice->prevEnvelopeFP -= voice->decayDeltaFP;
         result = voice->prevEnvelopeFP >> 16;
-        if (result < voice->sustainLevel) {
+        if (result <= voice->sustainLevel) {
             result = voice->sustainLevel;
             voice->prevEnvelopeFP = ((uint32_t)voice->sustainLevel) << 16;
             voice->state = STATE_SUSTAIN;

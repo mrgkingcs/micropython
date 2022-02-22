@@ -57,7 +57,7 @@ def test():
         picante.initAudio(bclk=12, wsel=13, din=11)
         
 
-        picante.setVoice(0, picante.WAVEFORM_TRIANGLE, (16, 16, 192, 64))
+        picante.setVoice(0, picante.WAVEFORM_TRIANGLE, (4, 8, 192, 32))
         picante.releaseNote(0)
         
         start = ticks_ms()
@@ -67,7 +67,7 @@ def test():
                 print(notes[beatIdx])
                 picante.playNote(0, notes[beatIdx], 16)
             
-            while (ticks_ms()-start) < (beatIdx+1)*msPerBeat - msPerBeat*0.6:
+            while (ticks_ms()-start) < (beatIdx+1)*msPerBeat - msPerBeat*0.4:
                 pass
 
             picante.releaseNote(0)
