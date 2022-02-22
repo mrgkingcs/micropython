@@ -77,7 +77,7 @@ void setWaveform_(uint8_t voiceIdx, uint8_t waveformID) {
 // Sets the base amplitude for the given voice
 //======================================================================================================
 void setAmplitude_(uint8_t voiceIdx, uint8_t amplitude) {
-    voices[voiceIdx].baseAmplitude = amplitude<<7;
+    voices[voiceIdx].baseAmplitude = ((uint16_t)amplitude)<<7;
 }
 
 //======================================================================================================
@@ -128,8 +128,12 @@ void releaseVoice_(uint8_t voiceIdx) {
 // This is where all the MAGIC happens! :O
 //======================================================================================================
 int16_t voiceGetSample(Voice* voice) {
-    int16_t sample = sine(voice->phaseFP>>16);
+    int32_t sample = (voice->waveform)(voice->phaseFP>>16);
     voice->phaseFP += voice->phasePerTickFP;
+
+    sample *= voice->baseAmplitude;
+    sample >>= 15;
+
     return sample;
 }
 

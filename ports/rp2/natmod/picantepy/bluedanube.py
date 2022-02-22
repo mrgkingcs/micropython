@@ -62,7 +62,7 @@ def test():
     for beatIdx in range(0, len(notes)):
         if notes[beatIdx] != "":
             print(notes[beatIdx])
-            picante.playNote(0, notes[beatIdx], 255)
+            picante.playNote(0, notes[beatIdx], 16)
         
         while (ticks_ms()-start) < (beatIdx+1)*msPerBeat:
             pass

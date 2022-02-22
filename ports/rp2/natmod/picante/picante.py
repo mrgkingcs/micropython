@@ -316,6 +316,8 @@ def playNote(voiceIdx, noteString, amplitude):
     print(noteFreq,"==>",phasePerSampleFP)
     picante_c.setPhasePerTick(voiceIdx, phasePerSampleFP)
 
+    picante_c.setAmplitude(voiceIdx, amplitude)
+
     picante_c.playVoice(voiceIdx)
 
 ####################################################################################
