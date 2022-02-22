@@ -377,6 +377,7 @@ STATIC mp_obj_t clearCmdQueue() {
 // Initialise the audio internals
 //======================================================================================================
 STATIC mp_obj_t initAudio() {
+    initVoices();
     setupSineLUT();
     setupWaveformLUT();
 
@@ -425,7 +426,7 @@ STATIC mp_obj_t setAmplitude(mp_obj_t voiceIdxObj, mp_obj_t amplitudeObj) {
 //======================================================================================================
 STATIC mp_obj_t setPhasePerTick(mp_obj_t voiceIdxObj, mp_obj_t phasePerTickObj) {
     uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
-    uint16_t phasePerTick = mp_obj_get_int(phasePerTickObj);
+    uint32_t phasePerTick = mp_obj_get_int(phasePerTickObj);
 
     setPhasePerTick_(voiceIdx, phasePerTick);
 

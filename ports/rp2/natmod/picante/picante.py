@@ -307,12 +307,14 @@ def playNote(voiceIdx, noteString, amplitude):
     octave = int(noteString[-1])
     noteIdx = semitoneIdxMap[noteString[:-1]]
 
-    octaveFreq = 2**(octave-1) * A1FreqHz
+    octaveFreq = 2**(octave-2) * A1FreqHz
     noteFreq = semitoneFreqFactors[noteIdx] * octaveFreq
 
-    # one phase per tick = 16000/65536 = 0.244140625 Hz
+    # 1Hz = 65536 phase /16000 sample = 4.096 phase per sample
     # represented as 16:16 fixed point
-    picante_c.setPhasePerTick(voiceIdx, int(0.244140625 * noteFreq * 65536))
+    phasePerSampleFP = int(4.096 * noteFreq * 65536)
+    print(noteFreq,"==>",phasePerSampleFP)
+    picante_c.setPhasePerTick(voiceIdx, phasePerSampleFP)
 
     picante_c.playVoice(voiceIdx)
 

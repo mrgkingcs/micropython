@@ -83,7 +83,7 @@ void setAmplitude_(uint8_t voiceIdx, uint8_t amplitude) {
 //======================================================================================================
 // Sets the phasePerTick for the given voice (phasePerTick = freq * 16000 / 65536) ==> 16:16 fixed point
 //======================================================================================================
-void setPhasePerTick_(uint8_t voiceIdx, uint16_t phasePerTick) {
+void setPhasePerTick_(uint8_t voiceIdx, uint32_t phasePerTick) {
     voices[voiceIdx].phasePerTickFP = phasePerTick;
 }
 
@@ -111,22 +111,26 @@ void setEnvelope_(  uint8_t voiceIdx,
 // Start playing a note for the given voice
 //======================================================================================================
 void playVoice_(uint8_t voiceIdx)  {
-   voices[voiceIdx].phaseFP = 0;
-   voices[voiceIdx].envelopePhaseTicks = 0;
+    voices[voiceIdx].phaseFP = 0;
+    voices[voiceIdx].envelopePhaseTicks = 0;
 }
 
 //======================================================================================================
 // Release the note for the given voice
 //======================================================================================================
 void releaseVoice_(uint8_t voiceIdx) {
-   voices[voiceIdx].envelopePhaseTicks = 0b1100000000000000;
+    // just instant cut-off for now
+    voices[voiceIdx].envelopePhaseTicks = 0xffff;//0b1100000000000000;
 }
 
 //======================================================================================================
 // Get the next sample from the given voice
+// This is where all the MAGIC happens! :O
 //======================================================================================================
 int16_t voiceGetSample(Voice* voice) {
-    return 0;
+    int16_t sample = sine(voice->phaseFP>>16);
+    voice->phaseFP += voice->phasePerTickFP;
+    return sample;
 }
 
 //======================================================================================================
@@ -149,6 +153,15 @@ void voiceSetBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples) {
     int16_t* beyondEnd = buffer + numSamples;
     while(currSample < beyondEnd) {
         *(currSample++) = voiceGetSample(voice);
+    }
+}
+
+//======================================================================================================
+// Initialise the voices to sensible values
+//======================================================================================================
+void initVoices() {
+    for(uint8_t voiceIdx = 0; voiceIdx < NUM_VOICES; voiceIdx++) {
+        voices[voiceIdx].envelopePhaseTicks = 0xffff;
     }
 }
 
@@ -205,8 +218,8 @@ void synthFillBuffer_(int16_t* buffer, uint16_t numSamples) {
     }
 
     if(!bufferCleared) {
-        int32_t* dst = (int32_t*)buffer;
-        int32_t* beyondEnd = dst + (numSamples>>1);
+        int16_t* dst = buffer;
+        int16_t* beyondEnd = dst + numSamples;
         while(dst < beyondEnd) {
             *(dst++) = 0;
         }
