@@ -291,11 +291,47 @@ def cleanupAudio():
 ####################################################################################
 #
 # sets up the parameters for the voice
+#  0 = sine, 1 = square, 2 = triangle, 3 = sawtooth, 4 = noise
+#  envelope is tuple of 4 values:
+#   - attack time in 64 frame units (roughly 1/256th of a second)
+#   - decay time in 64 frame units (roughly 1/256th of a second)
+#   - sustain level in 1/255ths of full amplitude
+#   - release time in 64 frame units (roughly 1/256th of a second)
 #
 ####################################################################################
 def setVoice(voiceIdx, waveform, envelope):
     picante_c.setWaveform(voiceIdx, waveform)
-    picante_c.setEnvelope(voiceIdx, envelope)
+
+    attackTime = int(envelope[0]) * 64
+    decayTime = int(envelope[1]) * 64
+    sustainLevel = envelope[2] * 32767 / 255
+    releaseTime = int(envelope[3]) * 64
+
+    if attackTime == 0:
+        attackDelta = 32767
+    else:
+        attackDelta = 32767 / attackTime
+
+    if decayTime == 0:
+        decayDelta = 32767
+    else:
+        maxDecayDelta = (32767 - sustainLevel)
+        decayDelta = maxDecayDelta / decayTime
+    
+    if releaseTime == 0:
+        releaseDelta = 32767
+    else:
+        releaseDelta = sustainLevel / releaseTime
+
+    # encode these values into 16:16 fixed point
+    encodedEnvelope = (
+            int(attackDelta * 65536),
+            int(decayDelta * 65536),
+            int(sustainLevel),
+            int(releaseDelta * 65536)
+        )
+
+    picante_c.setEnvelope(voiceIdx, encodedEnvelope)
 
 ####################################################################################
 #

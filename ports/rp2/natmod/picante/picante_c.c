@@ -435,6 +435,8 @@ STATIC mp_obj_t setPhasePerTick(mp_obj_t voiceIdxObj, mp_obj_t phasePerTickObj) 
 
 //======================================================================================================
 // Set the envelope values of the voice (tuple of attack, release, sustain, decay)
+//  deltas are envelope changes per sample, in 16:16 fixed point
+//  sustain level is in range 0->32767
 //======================================================================================================
 STATIC mp_obj_t setEnvelope(mp_obj_t voiceIdxObj, mp_obj_t envelopeTupleObj) {
     uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);

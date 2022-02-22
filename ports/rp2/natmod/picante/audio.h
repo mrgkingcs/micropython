@@ -24,6 +24,13 @@
 #define INTERP_BITS 11
 #define INTERP_MASK ((1<<INTERP_BITS)-1)
 
+#define MAX_SAMPLE_VALUE_FP (((uint32_t)MAX_SAMPLE_VALUE)<<16)
+
+#define STATE_NOT_PLAYING (0)
+#define STATE_ATTACK (1)
+#define STATE_DECAY (2)
+#define STATE_SUSTAIN (3)
+#define STATE_RELEASE (4)
 
 //======================================================================================================
 //  Structure to hold current state of a synth voice
@@ -33,18 +40,20 @@ typedef struct _Voice {
     uint32_t phaseFP;                       // in 16:16 fixed point (1 cycle is 0:0 -> 65535:65535)
     uint32_t phasePerTickFP;                // in 16:16 fixed point (1 cycle is 0:0 -> 65535:65535)
 
-    int16_t envelopeCurrAmplitude;          // 0 to 32767 (negative values ignored)
-    int16_t envelopeDeltaPerTick;           // how much to change the envelope by each sample
-    uint16_t envelopePhaseTicks;            // top two bits=envelope phase
-                                            // (00=A,01=R,10=S,11=D) => 0 = start playing; 0xffff = not playing
-                                            // low 14 bits are no. of samples elapsed since phase start 
+    uint32_t attackDeltaFP;                 // amount envelope should increase by each sample
+                                            // in 16:16 fixed point
+    uint32_t decayDeltaFP;                  // amount envelope should decrease by each sample
+                                            // in 16:16 fixed point
+    uint32_t releaseDeltaFP;                // amount envelope should decrease by each sample
+                                            // in 16:16 fixed point
+
+    uint32_t prevEnvelopeFP;                // previous envelope value in 16:16 fixed point
+
     uint16_t baseAmplitude;                 // 0 to 32767
 
+    uint16_t sustainLevel;                   // 0 to 32767
 
-    uint8_t attackTime;                     // in units of 64 samples (roughly 1/256th of a second)
-    uint8_t decayTime;                      // in units of 1024 samples (roughly 1/256th of a second)
-    uint8_t sustainLevel;                   // in 1/256ths of full amplitude
-    uint8_t releaseTime;                    // in units of 64 samples (roughly 1/256th of a second)
+    uint16_t state;
 } Voice;
 
 
@@ -95,6 +104,7 @@ bool voiceIsPlaying(uint8_t voiceIdx);
 
 //======================================================================================================
 // Sets the waveform for the given voice
+//  0 = sine, 1 = square, 2 = triangle, 3 = sawtooth, 4 = noise
 //======================================================================================================
 void setWaveform_(uint8_t voiceIdx, uint8_t waveformID);
 
@@ -114,10 +124,10 @@ void setPhasePerTick_(uint8_t voiceIdx, uint32_t phasePerTick);
 //  sustain level is in 1/256ths of base amplitude
 //======================================================================================================
 void setEnvelope_(  uint8_t voiceIdx, 
-                    uint8_t attackTime,
-                    uint8_t decayTime,
-                    uint8_t sustainLevel,
-                    uint8_t releaseTime
+                    uint32_t attackDeltaFP,
+                    uint32_t decayDeltaFP,
+                    uint16_t sustainLevel,
+                    uint32_t releaseDeltaFP
                 );
 
 //======================================================================================================

@@ -36,7 +36,11 @@ notes = [ "C4",
           "C4", "E4", "G4",
           "G4",  "",  "G5",
           "G5",  "",  "E5",
-          "E5",  ""
+          "E5",  "",  "C4",
+          "C4", "E4", "G4",
+          "G4",  "",  "G5",
+          "G5",  "",  "F5",
+          "F5"
     ]
 
 bpm = 120
@@ -47,29 +51,31 @@ micropython.mem_info()
 def test():
     """Test code."""
 
+    try:
+        picante.initGraphics(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
 
-    
-    picante.initGraphics(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
-
-    picante.initAudio(bclk=12, wsel=13, din=11)
-    
-
-    picante.setVoice(0, picante.WAVEFORM_TRIANGLE, (1, 1, 128, 1))
-    picante.releaseNote(0)
-    
-    start = ticks_ms()
-
-    for beatIdx in range(0, len(notes)):
-        if notes[beatIdx] != "":
-            print(notes[beatIdx])
-            picante.playNote(0, notes[beatIdx], 16)
+        picante.initAudio(bclk=12, wsel=13, din=11)
         
-        while (ticks_ms()-start) < (beatIdx+1)*msPerBeat:
-            pass
 
+        picante.setVoice(0, picante.WAVEFORM_TRIANGLE, (16, 16, 192, 64))
         picante.releaseNote(0)
+        
+        start = ticks_ms()
 
-    picante.cleanupAudio()
-    picante.cleanupGraphics()
+        for beatIdx in range(0, len(notes)):
+            if notes[beatIdx] != "":
+                print(notes[beatIdx])
+                picante.playNote(0, notes[beatIdx], 16)
+            
+            while (ticks_ms()-start) < (beatIdx+1)*msPerBeat - msPerBeat*0.6:
+                pass
+
+            picante.releaseNote(0)
+
+            while (ticks_ms()-start) < (beatIdx+1)*msPerBeat:
+                pass
+    finally:
+        picante.cleanupAudio()
+        picante.cleanupGraphics()
 
 test()

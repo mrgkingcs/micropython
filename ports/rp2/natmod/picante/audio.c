@@ -6,7 +6,66 @@ int16_t (*waveformFuncs[NUM_WAVEFORMS])(uint16_t phase);
 
 Voice voices[NUM_VOICES];
 
-uint32_t globalPhase; // just until proper instruments/timing is set up
+//======================================================================================================
+//======================================================================================================
+//
+//  Initialisation
+//
+//======================================================================================================
+//======================================================================================================
+
+//======================================================================================================
+// Initialise the voices to sensible values
+//======================================================================================================
+void initVoices() {
+    for(uint8_t voiceIdx = 0; voiceIdx < NUM_VOICES; voiceIdx++) {
+        voices[voiceIdx].state = STATE_NOT_PLAYING;
+    }
+}
+
+//======================================================================================================
+// Set up the sine look-up table
+//======================================================================================================
+void setupSineLUT() {
+    // initialise sine look-up table
+    sineLUT[ 0] = 0;
+    sineLUT[ 1] = 6392;
+    sineLUT[ 2] = 12539;
+    sineLUT[ 3] = 18204;
+    sineLUT[ 4] = 23169;
+    sineLUT[ 5] = 27244;
+    sineLUT[ 6] = 30272;
+    sineLUT[ 7] = 32137;
+    sineLUT[ 8] = 32767;
+    sineLUT[ 9] = 32137;
+    sineLUT[10] = 30272;
+    sineLUT[11] = 27244;
+    sineLUT[12] = 23169;
+    sineLUT[13] = 18204;
+    sineLUT[14] = 12539;
+    sineLUT[15] = 6392;
+    sineLUT[16] = 0;
+}
+
+//======================================================================================================
+// Set up the waveform function look-up table
+//======================================================================================================
+void setupWaveformLUT() {
+    waveformFuncs[0] = &sine;
+    waveformFuncs[1] = &square;
+    waveformFuncs[2] = &triangle;
+    waveformFuncs[3] = &sawtooth;
+    waveformFuncs[4] = &noise;
+}
+
+
+//======================================================================================================
+//======================================================================================================
+//
+//  Waveforms
+//
+//======================================================================================================
+//======================================================================================================
 
 //======================================================================================================
 // Get sine waveform (-32767 -> 32767) value for 'phase' (0 -> 65535)
@@ -60,10 +119,18 @@ int16_t noise(uint16_t phase) {
 }
 
 //======================================================================================================
+//======================================================================================================
+//
+//  Voice Status
+//
+//======================================================================================================
+//======================================================================================================
+
+//======================================================================================================
 // Returns true if the given voice should be added to the playback buffer
 //======================================================================================================
 bool voiceIsPlaying(uint8_t voiceIdx) {
-    return (voices[voiceIdx].envelopePhaseTicks != 0xffff);
+    return (voices[voiceIdx].state != STATE_NOT_PLAYING);
 }
 
 //======================================================================================================
@@ -89,38 +156,89 @@ void setPhasePerTick_(uint8_t voiceIdx, uint32_t phasePerTick) {
 
 //======================================================================================================
 // Sets the envelope for the given voice
-//  times are in units of 64 samples (roughly 1/256th of a second)
-//  sustain level is in 1/256ths of base amplitude
+//  deltas are envelope changes per sample, in 16:16 fixed point
+//  sustain level is in range 0->32767
 //======================================================================================================
 void setEnvelope_(  uint8_t voiceIdx, 
-                    uint8_t attackTime,
-                    uint8_t decayTime,
-                    uint8_t sustainLevel,
-                    uint8_t releaseTime
+                    uint32_t attackDeltaFP,
+                    uint32_t decayDeltaFP,
+                    uint16_t sustainLevel,
+                    uint32_t releaseDeltaFP
                 ) 
 {
     Voice* voicePtr = voices + voiceIdx;
 
-    voicePtr->attackTime = attackTime;
-    voicePtr->decayTime = decayTime;
+    voicePtr->attackDeltaFP = attackDeltaFP;
+    voicePtr->decayDeltaFP = decayDeltaFP;
     voicePtr->sustainLevel = sustainLevel;
-    voicePtr->releaseTime = releaseTime;
+    voicePtr->releaseDeltaFP = releaseDeltaFP;
+
 }
 
 //======================================================================================================
 // Start playing a note for the given voice
 //======================================================================================================
 void playVoice_(uint8_t voiceIdx)  {
-    voices[voiceIdx].phaseFP = 0;
-    voices[voiceIdx].envelopePhaseTicks = 0;
+    Voice* voice = voices + voiceIdx;
+    voice->phaseFP = 0;
+    voice->prevEnvelopeFP = 0;
+    voice->state = STATE_ATTACK;
 }
 
 //======================================================================================================
 // Release the note for the given voice
 //======================================================================================================
 void releaseVoice_(uint8_t voiceIdx) {
-    // just instant cut-off for now
-    voices[voiceIdx].envelopePhaseTicks = 0xffff;//0b1100000000000000;
+    // set envelope to start release
+    voices[voiceIdx].state = STATE_RELEASE;
+}
+
+
+//======================================================================================================
+//======================================================================================================
+//
+//  Internal Synth Stuff
+//
+//======================================================================================================
+//======================================================================================================
+
+//======================================================================================================
+// Get the next envelope value for the voice (and advance envelope)
+//======================================================================================================
+uint16_t getEnvelope(Voice* voice) {
+    uint16_t result = 32767;
+
+    if (voice->state == STATE_ATTACK) {
+        voice->prevEnvelopeFP += voice->attackDeltaFP;
+        if(voice->prevEnvelopeFP > MAX_SAMPLE_VALUE_FP) {
+            voice->prevEnvelopeFP = MAX_SAMPLE_VALUE_FP;
+            voice->state = STATE_DECAY;
+        } else {
+            result = voice->prevEnvelopeFP >> 16;
+        }
+    } else if (voice->state == STATE_DECAY) {
+        voice->prevEnvelopeFP -= voice->decayDeltaFP;
+        result = voice->prevEnvelopeFP >> 16;
+        if (result < voice->sustainLevel) {
+            result = voice->sustainLevel;
+            voice->prevEnvelopeFP = ((uint32_t)voice->sustainLevel) << 16;
+            voice->state = STATE_SUSTAIN;
+        }
+    } else if (voice->state == STATE_SUSTAIN) {
+        result = voice->sustainLevel;
+    } else if (voice->state == STATE_RELEASE) {
+        if(voice->prevEnvelopeFP < voice->releaseDeltaFP) {
+            result = 0;
+            voice->state = STATE_NOT_PLAYING;
+            voice->prevEnvelopeFP = 0;
+        } else {
+            voice->prevEnvelopeFP -= voice->releaseDeltaFP;
+            result = voice->prevEnvelopeFP >> 16;
+        }
+    } else if (voice->state == STATE_NOT_PLAYING) {
+        result = 0;
+    }
+    return result;
 }
 
 //======================================================================================================
@@ -128,10 +246,14 @@ void releaseVoice_(uint8_t voiceIdx) {
 // This is where all the MAGIC happens! :O
 //======================================================================================================
 int16_t voiceGetSample(Voice* voice) {
-    int32_t sample = (voice->waveform)(voice->phaseFP>>16);
+    uint16_t phase = voice->phaseFP>>16;
+    int32_t sample = (voice->waveform)(phase);
     voice->phaseFP += voice->phasePerTickFP;
 
     sample *= voice->baseAmplitude;
+    sample >>= 15;
+
+    sample *= getEnvelope(voice);
     sample >>= 15;
 
     return sample;
@@ -160,49 +282,7 @@ void voiceSetBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples) {
     }
 }
 
-//======================================================================================================
-// Initialise the voices to sensible values
-//======================================================================================================
-void initVoices() {
-    for(uint8_t voiceIdx = 0; voiceIdx < NUM_VOICES; voiceIdx++) {
-        voices[voiceIdx].envelopePhaseTicks = 0xffff;
-    }
-}
 
-//======================================================================================================
-// Set up the sine look-up table
-//======================================================================================================
-void setupSineLUT() {
-    // initialise sine look-up table
-    sineLUT[ 0] = 0;
-    sineLUT[ 1] = 6392;
-    sineLUT[ 2] = 12539;
-    sineLUT[ 3] = 18204;
-    sineLUT[ 4] = 23169;
-    sineLUT[ 5] = 27244;
-    sineLUT[ 6] = 30272;
-    sineLUT[ 7] = 32137;
-    sineLUT[ 8] = 32767;
-    sineLUT[ 9] = 32137;
-    sineLUT[10] = 30272;
-    sineLUT[11] = 27244;
-    sineLUT[12] = 23169;
-    sineLUT[13] = 18204;
-    sineLUT[14] = 12539;
-    sineLUT[15] = 6392;
-    sineLUT[16] = 0;
-}
-
-//======================================================================================================
-// Set up the waveform function look-up table
-//======================================================================================================
-void setupWaveformLUT() {
-    waveformFuncs[0] = &sine;
-    waveformFuncs[1] = &square;
-    waveformFuncs[2] = &triangle;
-    waveformFuncs[3] = &sawtooth;
-    waveformFuncs[4] = &noise;
-}
 
 
 //======================================================================================================
