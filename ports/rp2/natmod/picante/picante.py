@@ -215,10 +215,36 @@ SAMPLE_SIZE_BITS = 16
 
 SYNTH_BUFFER_BYTES = 1024
 
+WAVEFORM_SINE = 0
+WAVEFORM_SQUARE = 1
+WAVEFORM_TRIANGLE = 2
+WAVEFORM_SAWTOOTH = 3
+WAVEFORM_NOISE = 4
+
 # globals
 audioOut = None
 synthBuffer = None
 playingBufferIdx = 0
+
+A1FreqHz = 55
+
+semitoneFreqFactors = [
+    1, 1.059, 1.122, 1.189, 1.260, 1.335, 1.414, 1.498, 1.587, 1.682, 1.782, 1.888
+]
+
+semitoneIdxMap = {  "A" : 0, 
+                    "A#" : 1, "Bb" : 1,
+                    "B" : 2,
+                    "C" : 3,
+                    "C#" : 4, "Db" : 4,
+                    "D" : 5,
+                    "D#" : 6, "Eb" : 6,
+                    "E" : 7,
+                    "F" : 8,
+                    "F#" : 9, "Gb" : 9,
+                    "G" : 10,
+                    "G#" : 11, "Ab" : 11
+}
 
 ####################################################################################
 #
@@ -264,6 +290,43 @@ def cleanupAudio():
 
 ####################################################################################
 #
+# sets up the parameters for the voice
+#
+####################################################################################
+def setVoice(voiceIdx, waveform, envelope):
+    picante_c.setWaveform(voiceIdx, waveform)
+    picante_c.setEnvelope(voiceIdx, envelope)
+
+####################################################################################
+#
+# starts playing a note (e.g. pressing a key on a keyboard)
+#   Note string is in range "A1" to "Ab7"
+#
+####################################################################################
+def playNote(voiceIdx, noteString, amplitude):
+    octave = int(noteString[-1])
+    noteIdx = semitoneIdxMap[noteString[:-1]]
+
+    octaveFreq = 2**(octave-1) * A1FreqHz
+    noteFreq = semitoneFreqFactors[noteIdx] * octaveFreq
+
+    # one phase per tick = 16000/65536 = 0.244140625 Hz
+    # represented as 16:16 fixed point
+    picante_c.setPhasePerTick(voiceIdx, int(0.244140625 * noteFreq * 65536))
+
+    picante_c.playVoice(voiceIdx)
+
+####################################################################################
+#
+# stops playing a note (e.g. releasing a key on a keyboard)
+#
+####################################################################################
+def releaseNote(voiceIdx):
+    picante_c.releaseVoice(voiceIdx)
+
+
+####################################################################################
+#
 # interrupt handler to provide audio samples
 #
 ####################################################################################
@@ -271,7 +334,6 @@ def i2s_callback(arg):
     global audioOut, synthBuffer, playingBufferIdx
     audioOut.write(synthBuffer)
     picante_c.synthFillBuffer(synthBuffer)
-    
 
 ####################################################################################
 #
