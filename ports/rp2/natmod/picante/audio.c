@@ -334,18 +334,6 @@ STATIC mp_obj_t audSetWaveform(mp_obj_t voiceIdxObj, mp_obj_t waveformIDObj) {
 }
 
 //======================================================================================================
-// Set the base amplitude of the given voice
-//======================================================================================================
-STATIC mp_obj_t audSetAmplitude(mp_obj_t voiceIdxObj, mp_obj_t amplitudeObj) {
-    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
-    uint16_t amplitude = mp_obj_get_int(amplitudeObj) & 0xff;
-
-    voices[voiceIdx].baseAmplitude = ((uint16_t)amplitude)<<7;
-
-    return mp_obj_new_int(0);
-}
-
-//======================================================================================================
 // Set the frequency of the note (as phasePerTick)
 // Python code can convert between freq and phasePerTick
 //======================================================================================================
@@ -378,6 +366,18 @@ STATIC mp_obj_t audSetEnvelope(mp_obj_t voiceIdxObj, mp_obj_t envelopeTupleObj) 
 }
 
 //======================================================================================================
+// Set the base amplitude of the given voice
+//======================================================================================================
+STATIC mp_obj_t audSetAmplitude(mp_obj_t voiceIdxObj, mp_obj_t amplitudeObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+    uint16_t amplitude = mp_obj_get_int(amplitudeObj) & 0xff;
+
+    voices[voiceIdx].baseAmplitude = ((uint16_t)amplitude)<<7;
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
 // Set the voice playing a new note
 //======================================================================================================
 STATIC mp_obj_t audPlayVoice(mp_obj_t voiceIdxObj) {
@@ -405,6 +405,11 @@ STATIC mp_obj_t audReleaseVoice(mp_obj_t voiceIdxObj) {
     return mp_obj_new_int(0);
 }
 
+//======================================================================================================
+//
+// Micropython bindings
+//
+//======================================================================================================
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(audInit_obj, audInit);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(audSynthFillBuffer_obj, audSynthFillBuffer);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetWaveform_obj, audSetWaveform);
