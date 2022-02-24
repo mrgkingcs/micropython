@@ -36,7 +36,7 @@ def test():
     """Test code."""
     pass
 
-    picante.init(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
+    picante.initGraphics(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
     fontID = picante.loadFont("tom-thumb-new.bin")
     
     micropython.mem_info()
@@ -78,6 +78,6 @@ def test():
     count = end-start
     print(numFrames, "frames in",(count),"ms =",(numFrames*1000/count),"fps")
 
-    picante.cleanup()
+    picante.cleanupGraphics()
 
 test()

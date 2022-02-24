@@ -1,3 +1,15 @@
+//======================================================================================================
+//======================================================================================================
+//
+//  audio.h
+//
+//  Audio internals for picante
+//
+//  Copyright (c) 2022 Greg King
+//
+//======================================================================================================
+//======================================================================================================
+
 #include "py/dynruntime.h"
 
 #include "py/objarray.h"
@@ -168,6 +180,6 @@ void voiceMixToBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples);
 void voiceSetBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples);
 
 //======================================================================================================
-// Do the meat of filling out the buffer with synth output
+// do Micropython binding stuffs
 //======================================================================================================
-void synthFillBuffer_(int16_t* buffer, uint16_t numSamples);
+void mpy_audio_init();

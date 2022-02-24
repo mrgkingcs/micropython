@@ -136,8 +136,10 @@ $(BUILD)/%.o: %.c $(CONFIG_H) Makefile
 
 # Build .mpy from .py source files
 $(BUILD)/%.mpy: %.py
-	$(ECHO) "MPY $<"
-	$(Q)$(MPY_CROSS) $(MPY_CROSS_FLAGS) -o $@ $<
+	$(ECHO) "MPY $< $(MPY_CROSS_FLAGS)"
+	$(Q)$(MPY_CROSS) -march=armv6 -o $@ $<
+
+#	$(Q)$(MPY_CROSS) $(MPY_CROSS_FLAGS) -o $@ $<
 
 # Build native .mpy from object files
 $(BUILD)/$(MOD).native.mpy: $(SRC_O)

@@ -35,7 +35,7 @@ SCR_HEIGHT=240
 def test():
     """Test code."""
 
-    picante.init(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
+    picante.initGraphics(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
     ballSpriteInfo = picante.loadSprite("ballsprite.bin")
     tileSetInfo = picante.loadSprite("tileset_dungeon.bin")
     
@@ -49,11 +49,9 @@ def test():
 
     start = ticks_ms()
 
-    numFrames = 1000
+    numFrames = 100
 
     for frame in range(0,numFrames):
-        #print("Frame:",frame)
-        #print("clear()")
         picante.clear(0x07ffffff)
         
         posX += dirX
@@ -75,13 +73,12 @@ def test():
         picante.blit32(ballSpriteInfo["pixelBuffers"][0], posX, posY, ballSpriteInfo["palettes"][0])
         picante.setTransparentColour(-1)
 
-        #print("draw()")
         picante.draw()
 
     end = ticks_ms()
     count = end-start
     print(numFrames, "frames in",(count),"ms =",(numFrames*1000/count),"fps")
 
-    picante.cleanup()
+    picante.cleanupGraphics()
 
 test()

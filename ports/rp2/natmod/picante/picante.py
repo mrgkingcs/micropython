@@ -1,7 +1,19 @@
+# ======================================================================================================
+# ======================================================================================================
+# 
+#   picante.py
+# 
+#   Python wrapper around C interface
+# 
+#   Copyright (c) 2022 Greg King
+# 
+# ======================================================================================================
+# ======================================================================================================
+
 from micropython import schedule
 from ili9341 import Display, color565
 from machine import Pin, SPI, I2S
-import picante_c
+
 
 ####################################################################################
 ####################################################################################
@@ -41,7 +53,7 @@ def initGraphics(sck, mosi, dc, cs, rst, rotation):
     global spi, display
     spi = SPI(0, baudrate=65000000, sck=Pin(sck), mosi=Pin(mosi))
     display = Display(spi, dc=Pin(dc), cs=Pin(cs), rst=Pin(rst), rotation=rotation, width=SCREEN_WIDTH, height=SCREEN_HEIGHT)
-    picante_c.initGraphics()
+    gfxInit()
 
 ####################################################################################
 #
@@ -77,10 +89,8 @@ def loadSprite(filename):
     while len(inHeader) == 4:
         if inHeader == paletteHeader:
             result["palettes"].append(inFile.read(32))
-            #print("Loaded palette",len(result["palettes"]))
         elif inHeader == bmp32Header:
             result["pixelBuffers"].append(inFile.read(32*32//2))
-            #print("Loaded pixelBuffer",len(result["pixelBuffers"]))
         else:
             print("Unrecognised header found:", inHeader.decode('ascii'), ":", list(inHeader))
             break
@@ -122,9 +132,9 @@ def loadFont(filename):
 
         fontInfo = (charWidth, charHeight, advanceX, advanceY, firstCharCode, finalCharCode, buffer)
         
-        print("Loaded font: ",charWidth,"x",charHeight,":",advanceX,advanceY,firstCharCode, finalCharCode, buffer)
+        # print("Loaded font: ",charWidth,"x",charHeight,":",advanceX,advanceY,firstCharCode, finalCharCode, buffer)
 
-        fontID = picante_c.addFont( fontInfo )
+        fontID = gfxAddFont( fontInfo )
     else:
         print("Failed to load font:",filename)
 
@@ -140,7 +150,7 @@ def setTransparentColour(index):
     if index < 0 or index >= 16:
         index = 0xff
         
-    return picante_c.setTransparentColour(index)
+    return gfxSetTransparentColour(index)
 
 ####################################################################################
 #
@@ -148,7 +158,7 @@ def setTransparentColour(index):
 #
 ####################################################################################
 def setFont(fontBuffer):
-    return picante_c.setFont(fontBuffer)
+    return setFont(fontBuffer)
 
 ####################################################################################
 #
@@ -156,7 +166,7 @@ def setFont(fontBuffer):
 #
 ####################################################################################
 def clear(colour565 = 0):
-    return picante_c.clear565(colour565)
+    return gfxClear565(colour565)
 
 ####################################################################################
 #
@@ -167,7 +177,7 @@ def clear(colour565 = 0):
 #
 ####################################################################################
 def blit32(bitmap, x, y, palette):
-    return picante_c.blit32(bitmap, (x, y), palette)
+    return gfxBlit32(bitmap, (x, y), palette)
 
 ####################################################################################
 #
@@ -175,7 +185,7 @@ def blit32(bitmap, x, y, palette):
 #
 ####################################################################################
 def drawText(string, x, y, colour565):
-    return picante_c.drawText(string, (x, y), colour565)
+    return gfxDrawText(string, (x, y), colour565)
 
 ####################################################################################
 #
@@ -185,9 +195,9 @@ def drawText(string, x, y, colour565):
 def draw():
     for stripeIdx in range(0, NUM_STRIPES):
         #print("Rendering stripe",stripeIdx)
-        picante_c.renderStripe(stripeIdx, displayStripe)
+        gfxRenderStripe(stripeIdx, displayStripe)
         display.block(0, stripeIdx*STRIPE_HEIGHT, 319, (stripeIdx+1)*STRIPE_HEIGHT-1, displayStripe)
-    picante_c.clearCmdQueue()
+    gfxClearCmdQueue()
 
 
 ####################################################################################
@@ -274,7 +284,7 @@ def initAudio(bclk, wsel, din):
     playingBufferIdx = 0
     audioOut.write(synthBuffer)
 
-    picante_c.initAudio()
+    audInit()
 
 
 ####################################################################################
@@ -284,8 +294,9 @@ def initAudio(bclk, wsel, din):
 ####################################################################################
 def cleanupAudio():
     global audioOut, synthBuffer
-    audioOut.deinit()
-    audioOut = None
+    if audioOut is not None:
+        audioOut.deinit()
+        audioOut = None
     synthBuffer = None
 
 ####################################################################################
@@ -300,7 +311,7 @@ def cleanupAudio():
 #
 ####################################################################################
 def setVoice(voiceIdx, waveform, envelope):
-    picante_c.setWaveform(voiceIdx, waveform)
+    audSetWaveform(voiceIdx, waveform)
 
     attackTime = int(envelope[0]) * 64
     decayTime = int(envelope[1]) * 64
@@ -331,7 +342,7 @@ def setVoice(voiceIdx, waveform, envelope):
             int(releaseDelta * 65536)
         )
 
-    picante_c.setEnvelope(voiceIdx, encodedEnvelope)
+    audSetEnvelope(voiceIdx, encodedEnvelope)
 
 ####################################################################################
 #
@@ -350,11 +361,11 @@ def playNote(voiceIdx, noteString, amplitude):
     # represented as 16:16 fixed point
     phasePerSampleFP = int(4.096 * noteFreq * 65536)
     print(noteFreq,"==>",phasePerSampleFP)
-    picante_c.setPhasePerTick(voiceIdx, phasePerSampleFP)
+    audSetPhasePerTick(voiceIdx, phasePerSampleFP)
 
-    picante_c.setAmplitude(voiceIdx, amplitude)
+    audSetAmplitude(voiceIdx, amplitude)
 
-    picante_c.playVoice(voiceIdx)
+    audPlayVoice(voiceIdx)
 
 ####################################################################################
 #
@@ -362,7 +373,7 @@ def playNote(voiceIdx, noteString, amplitude):
 #
 ####################################################################################
 def releaseNote(voiceIdx):
-    picante_c.releaseVoice(voiceIdx)
+    audReleaseVoice(voiceIdx)
 
 
 ####################################################################################
@@ -373,7 +384,7 @@ def releaseNote(voiceIdx):
 def i2s_callback(arg):
     global audioOut, synthBuffer, playingBufferIdx
     audioOut.write(synthBuffer)
-    picante_c.synthFillBuffer(synthBuffer)
+    audSynthFillBuffer(synthBuffer)
 
 ####################################################################################
 #
@@ -381,4 +392,4 @@ def i2s_callback(arg):
 #
 ####################################################################################
 def fillBuffer(bufferIdx):
-    picante_c.synthFillBuffer(synthBuffer[bufferIdx])
+    audSynthFillBuffer(synthBuffer[bufferIdx])

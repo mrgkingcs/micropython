@@ -1,3 +1,15 @@
+//======================================================================================================
+//======================================================================================================
+//
+//  audio.c
+//
+//  Audio internals for picante
+//
+//  Copyright (c) 2022 Greg King
+//
+//======================================================================================================
+//======================================================================================================
+
 #include "audio.h"
 
 
@@ -164,70 +176,6 @@ bool voiceIsPlaying(uint8_t voiceIdx) {
     return (voices[voiceIdx].state != STATE_NOT_PLAYING);
 }
 
-//======================================================================================================
-// Sets the waveform for the given voice
-//  0 = sine, 1 = square, 2 = triangle, 3 = sawtooth, 4 = noise
-//======================================================================================================
-void setWaveform_(uint8_t voiceIdx, uint8_t waveformID) {
-    voices[voiceIdx].waveform = waveformFuncs[waveformID];
-}
-
-//======================================================================================================
-// Sets the base amplitude for the given voice
-//======================================================================================================
-void setAmplitude_(uint8_t voiceIdx, uint8_t amplitude) {
-    voices[voiceIdx].baseAmplitude = ((uint16_t)amplitude)<<7;
-}
-
-//======================================================================================================
-// Sets the phasePerTick for the given voice (phasePerTick = freq * 16000 / 65536) ==> 16:16 fixed point
-//======================================================================================================
-void setPhasePerTick_(uint8_t voiceIdx, uint32_t phasePerTick) {
-    voices[voiceIdx].phasePerTickFP = phasePerTick;
-}
-
-//======================================================================================================
-// Sets the envelope for the given voice
-//  deltas are envelope changes per sample, in 16:16 fixed point
-//  sustain level is in range 0->32767
-//======================================================================================================
-void setEnvelope_(  uint8_t voiceIdx, 
-                    uint32_t attackDeltaFP,
-                    uint32_t decayDeltaFP,
-                    uint16_t sustainLevel,
-                    uint32_t releaseDeltaFP
-                ) 
-{
-    Voice* voicePtr = voices + voiceIdx;
-
-    voicePtr->attackDeltaFP = attackDeltaFP;
-    voicePtr->decayDeltaFP = decayDeltaFP;
-    voicePtr->sustainLevel = sustainLevel;
-    voicePtr->releaseDeltaFP = releaseDeltaFP;
-
-}
-
-//======================================================================================================
-// Start playing a note for the given voice
-//======================================================================================================
-void playVoice_(uint8_t voiceIdx)  {
-    Voice* voice = voices + voiceIdx;
-    voice->phaseFP = 0;
-    voice->prevEnvelopeFP = 0;
-    voice->state = STATE_ATTACK;
-    if(voice->waveform == &noise) {
-        noiseWaveformNextPhase = 0;
-    }
-}
-
-//======================================================================================================
-// Release the note for the given voice
-//======================================================================================================
-void releaseVoice_(uint8_t voiceIdx) {
-    // set envelope to start release
-    voices[voiceIdx].state = STATE_RELEASE;
-}
-
 
 //======================================================================================================
 //======================================================================================================
@@ -319,11 +267,35 @@ void voiceSetBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples) {
 
 
 
+//======================================================================================================
+//======================================================================================================
+//
+// Micropython bindings
+//
+//======================================================================================================
+//======================================================================================================
 
 //======================================================================================================
-// Do the meat of filling out the buffer with synth output
+// Initialise the audio internals
 //======================================================================================================
-void synthFillBuffer_(int16_t* buffer, uint16_t numSamples) {
+STATIC mp_obj_t audInit() {
+    initVoices();
+    setupSineLUT();
+    setupWaveformLUT();
+    setupNoiseWaveformTable();
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Fill the given buffer with the next audio samples
+//======================================================================================================
+STATIC mp_obj_t audSynthFillBuffer(mp_obj_t bufferObj) {
+    mp_obj_array_t* bufferArr = (mp_obj_array_t*)MP_OBJ_TO_PTR(bufferObj);
+
+    int16_t* buffer = (int16_t*)bufferArr->items;
+    uint32_t numSamples = bufferArr->len>>1;
+
     bool bufferCleared = false;
     for(uint voiceIdx = 0; voiceIdx < NUM_VOICES; voiceIdx++) {
         if(voiceIsPlaying(voiceIdx)) {
@@ -343,4 +315,110 @@ void synthFillBuffer_(int16_t* buffer, uint16_t numSamples) {
             *(dst++) = 0;
         }
     }
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the waveform of the given voice
+//  0 = sine, 1 = square, 2 = triangle, 3 = sawtooth, 4 = noise
+//======================================================================================================
+STATIC mp_obj_t audSetWaveform(mp_obj_t voiceIdxObj, mp_obj_t waveformIDObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+    uint8_t waveformID = mp_obj_get_int(waveformIDObj);
+
+    voices[voiceIdx].waveform = waveformFuncs[waveformID];
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the base amplitude of the given voice
+//======================================================================================================
+STATIC mp_obj_t audSetAmplitude(mp_obj_t voiceIdxObj, mp_obj_t amplitudeObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+    uint16_t amplitude = mp_obj_get_int(amplitudeObj) & 0xff;
+
+    voices[voiceIdx].baseAmplitude = ((uint16_t)amplitude)<<7;
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the frequency of the note (as phasePerTick)
+// Python code can convert between freq and phasePerTick
+//======================================================================================================
+STATIC mp_obj_t audSetPhasePerTick(mp_obj_t voiceIdxObj, mp_obj_t phasePerTickObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+    uint32_t phasePerTick = mp_obj_get_int(phasePerTickObj);
+
+    voices[voiceIdx].phasePerTickFP = phasePerTick;
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the envelope values of the voice (tuple of attack, release, sustain, decay)
+//  deltas are envelope changes per sample, in 16:16 fixed point
+//  sustain level is in range 0->32767
+//======================================================================================================
+STATIC mp_obj_t audSetEnvelope(mp_obj_t voiceIdxObj, mp_obj_t envelopeTupleObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+    mp_obj_tuple_t* envelopeTuple = MP_OBJ_TO_PTR(envelopeTupleObj);
+
+    Voice* voicePtr = voices + voiceIdx;
+
+    voicePtr->attackDeltaFP = mp_obj_get_int(envelopeTuple->items[0]);
+    voicePtr->decayDeltaFP = mp_obj_get_int(envelopeTuple->items[1]);
+    voicePtr->sustainLevel = mp_obj_get_int(envelopeTuple->items[2]);
+    voicePtr->releaseDeltaFP = mp_obj_get_int(envelopeTuple->items[3]);
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Set the voice playing a new note
+//======================================================================================================
+STATIC mp_obj_t audPlayVoice(mp_obj_t voiceIdxObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+
+    Voice* voice = voices + voiceIdx;
+    voice->phaseFP = 0;
+    voice->prevEnvelopeFP = 0;
+    voice->state = STATE_ATTACK;
+    if(voice->waveform == &noise) {
+        noiseWaveformNextPhase = 0;
+    }
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
+// Release the note playing on the given voice
+//======================================================================================================
+STATIC mp_obj_t audReleaseVoice(mp_obj_t voiceIdxObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+
+    voices[voiceIdx].state = STATE_RELEASE;
+
+    return mp_obj_new_int(0);
+}
+
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(audInit_obj, audInit);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(audSynthFillBuffer_obj, audSynthFillBuffer);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetWaveform_obj, audSetWaveform);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetAmplitude_obj, audSetAmplitude);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetPhasePerTick_obj, audSetPhasePerTick);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetEnvelope_obj, audSetEnvelope);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(audPlayVoice_obj, audPlayVoice);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(audReleaseVoice_obj, audReleaseVoice);
+
+void mpy_audio_init() {
+    mp_store_global(MP_QSTR_audInit, MP_OBJ_FROM_PTR(&audInit_obj));
+    mp_store_global(MP_QSTR_audSynthFillBuffer, MP_OBJ_FROM_PTR(&audSynthFillBuffer_obj));
+    mp_store_global(MP_QSTR_audSetWaveform, MP_OBJ_FROM_PTR(&audSetWaveform_obj));
+    mp_store_global(MP_QSTR_audSetAmplitude, MP_OBJ_FROM_PTR(&audSetAmplitude_obj));
+    mp_store_global(MP_QSTR_audSetPhasePerTick, MP_OBJ_FROM_PTR(&audSetPhasePerTick_obj));
+    mp_store_global(MP_QSTR_audSetEnvelope, MP_OBJ_FROM_PTR(&audSetEnvelope_obj));
+    mp_store_global(MP_QSTR_audPlayVoice, MP_OBJ_FROM_PTR(&audPlayVoice_obj));
+    mp_store_global(MP_QSTR_audReleaseVoice, MP_OBJ_FROM_PTR(&audReleaseVoice_obj));
 }

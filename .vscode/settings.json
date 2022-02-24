@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "spi.h": "c"
+        "spi.h": "c",
+        "dynruntime.h": "c"
     }
 }

@@ -33,22 +33,15 @@ from time import ticks_ms
 
 import picante
 
-#from ballsprite import ballsprite, ballsprite_pal
-#import tileset_dungeon
-
 SCR_WIDTH=320
 SCR_HEIGHT=240
 
 def test():
     """Test code."""
 
-    picante.init(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
+    picante.initGraphics(sck=2, mosi=3, dc=7, cs=5, rst=6, rotation=270)
     ballSpriteInfo = picante.loadSprite("ballsprite.bin")
     tileSetInfo = picante.loadSprite("tileset_dungeon.bin")
-    
-#     del tileSetInfo["pixelBuffers"][2]
-#     del tileSetInfo["pixelBuffers"][1]
-#     del tileSetInfo["pixelBuffers"][0]
 
     micropython.mem_info()
 
@@ -60,11 +53,9 @@ def test():
 
     start = ticks_ms()
 
-    numFrames = 1000
+    numFrames = 100
 
     for frame in range(0,numFrames):
-        #print("Frame:",frame)
-        #print("clear()")
         picante.clear(0b0)
         
         posX += dirX
@@ -82,14 +73,6 @@ def test():
         elif posY <= 0:
             posY = 0
             dirY = speed
-        
-        
-        
-#         tile1 = tileSetInfo["pixelBuffers"][0]
-#         tile2 = tileSetInfo["pixelBuffers"][9]
-# 
-#         picante.blit32(tile1, 0, 0, tileSetInfo["palettes"][0])
-#         picante.blit32(tile2, 32, 32, tileSetInfo["palettes"][0])
 
         for tileRow in range(0, (SCR_HEIGHT/32)-1):
             for tileCol in range(0, SCR_WIDTH/32):
@@ -98,13 +81,12 @@ def test():
             
         picante.blit32(ballSpriteInfo["pixelBuffers"][0], posX, posY, ballSpriteInfo["palettes"][0])
 
-        #print("draw()")
         picante.draw()
 
     end = ticks_ms()
     count = end-start
     print(numFrames, "frames in",(count),"ms =",(numFrames*1000/count),"fps")
 
-    picante.cleanup()
+    picante.cleanupGraphics()
 
 test()

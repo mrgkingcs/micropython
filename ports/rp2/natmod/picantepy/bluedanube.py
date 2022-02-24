@@ -29,6 +29,7 @@ from time import ticks_ms
 
 import picante
 
+
 SCR_WIDTH=320
 SCR_HEIGHT=240
 
@@ -43,6 +44,16 @@ notes = [ "C4",
           "F5"
     ]
 
+notes2 = [ "",
+           "",   "",  "",
+           "",   "",  "E5",
+          "E5",  "",  "C5",
+          "C5",  "",  "",
+          "",    "", "",
+          "",    "",  "F5",
+          "F5",  "",  "B5",
+          "B5"
+    ]
 bpm = 120
 msPerBeat = int(1000*60/bpm)
 
@@ -58,19 +69,22 @@ def test():
         
 
         picante.setVoice(0, picante.WAVEFORM_TRIANGLE, (4, 8, 192, 32))
-        picante.releaseNote(0)
+        picante.setVoice(1, picante.WAVEFORM_TRIANGLE, (4, 8, 192, 32))
         
         start = ticks_ms()
 
         for beatIdx in range(0, len(notes)):
             if notes[beatIdx] != "":
-                print(notes[beatIdx])
                 picante.playNote(0, notes[beatIdx], 16)
+            
+            if notes2[beatIdx] != "":
+                picante.playNote(1, notes2[beatIdx], 16)
             
             while (ticks_ms()-start) < (beatIdx+1)*msPerBeat - msPerBeat*0.4:
                 pass
 
             picante.releaseNote(0)
+            picante.releaseNote(1)
 
             while (ticks_ms()-start) < (beatIdx+1)*msPerBeat:
                 pass
