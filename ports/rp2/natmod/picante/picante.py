@@ -231,6 +231,9 @@ WAVEFORM_TRIANGLE = 2
 WAVEFORM_SAWTOOTH = 3
 WAVEFORM_NOISE = 4
 
+MODULATION_NONE = 0
+MODULATION_LINEAR = 1
+
 # globals
 audioOut = None
 synthBuffer = None
@@ -346,8 +349,21 @@ def setVoice(voiceIdx, waveform, envelope):
 
 ####################################################################################
 #
+# sets up a voice to be modulated by the next voice along
+# (modulatorIdx = (carrierIdx+1)%numVoices )
+# modulationType: 0 = none, 1 = linear
+# freqMultiplier: modulator frequency = this * carrier frequency
+# amplitude: 0-255 amplitude of modulation voice
+#
+####################################################################################
+def setModulation(voiceIdx, modulationType, freqMultiplier, amplitude):
+    freqMultiplierFP = int(freqMultiplier * (1<<4))
+    audSetModulation(voiceIdx, (modulationType, freqMultiplierFP, amplitude))
+
+####################################################################################
+#
 # starts playing a note (e.g. pressing a key on a keyboard)
-#   Note string is in range "A1" to "Ab7"
+#   Note string is in range "A1" (55Hz) to "Ab7" (3322Hz)
 #
 ####################################################################################
 def playNote(voiceIdx, noteString, amplitude):

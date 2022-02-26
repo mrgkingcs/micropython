@@ -51,6 +51,9 @@
 #define STATE_SUSTAIN (3)
 #define STATE_RELEASE (4)
 
+#define MODULATION_NONE (0)
+#define MODULATION_LINEAR (1)
+
 //======================================================================================================
 //  Structure to hold current state of a synth voice
 //======================================================================================================
@@ -72,7 +75,10 @@ typedef struct _Voice {
 
     uint16_t sustainLevel;                   // 0 to 32767
 
-    uint16_t state;
+    uint8_t state;                          // holds playing/envelope state
+    uint8_t modulationType;                 // holds type of modulation
+    uint16_t modulationFreqFactorFP;        // modulation freq = this * carrier frequency
+                                            // in 12:4 fixed point
 } Voice;
 
 

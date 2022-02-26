@@ -12,6 +12,7 @@
 
 #include "audio.h"
 
+#include "py/dynruntime.h"
 
 int16_t sineLUT[LUT_SIZE]; 
 int16_t (*waveformFuncs[NUM_WAVEFORMS])(uint16_t phase);
@@ -178,6 +179,14 @@ bool voiceIsPlaying(uint8_t voiceIdx) {
     return (voices[voiceIdx].state != STATE_NOT_PLAYING);
 }
 
+//======================================================================================================
+// Returns true if the given voice is being used as a modulator
+//======================================================================================================
+bool voiceIsModulator(uint8_t voiceIdx) {
+    uint8_t carrier = (voiceIdx>0) ? (voiceIdx-1) : (NUM_VOICES-1);
+    return (voices[carrier].modulationType != MODULATION_NONE);
+}
+
 
 //======================================================================================================
 //======================================================================================================
@@ -227,13 +236,36 @@ uint16_t getEnvelope(Voice* voice) {
 }
 
 //======================================================================================================
+// Get the modulator voice for the given carrier voice
+//======================================================================================================
+Voice* getModulator(Voice* carrierVoice) {
+    Voice* modulator = carrierVoice+1;
+    if (modulator > voices+NUM_VOICES) {
+        modulator = voices;
+    }
+    return modulator;
+}
+
+//======================================================================================================
 // Get the next sample from the given voice
 // This is where all the MAGIC happens! :O
 //======================================================================================================
 int16_t voiceGetSample(Voice* voice) {
     uint16_t phase = voice->phaseFP>>16;
     int32_t sample = (voice->waveform)(phase);
-    voice->phaseFP += voice->phasePerTickFP;
+
+    // apply modulation here
+    if(voice->modulationType == MODULATION_NONE) {
+        voice->phaseFP += voice->phasePerTickFP;
+    } else if (voice->modulationType == MODULATION_LINEAR) {
+        Voice* modulator = getModulator(voice);
+        int32_t modulatorSampleFP = ((int32_t)voiceGetSample(modulator)) << 16;
+        int32_t signedPhasePerTickFP = voice->phasePerTickFP >> 1;
+        int32_t phaseDeltaFP = signedPhasePerTickFP + modulatorSampleFP;
+        if (phaseDeltaFP > 0) {
+            voice->phaseFP += ((uint32_t)phaseDeltaFP) << 1;
+        }
+    }
 
     sample *= voice->baseAmplitude;
     sample >>= 15;
@@ -300,7 +332,7 @@ STATIC mp_obj_t audSynthFillBuffer(mp_obj_t bufferObj) {
 
     bool bufferCleared = false;
     for(uint voiceIdx = 0; voiceIdx < NUM_VOICES; voiceIdx++) {
-        if(voiceIsPlaying(voiceIdx)) {
+        if(voiceIsPlaying(voiceIdx) && !voiceIsModulator(voiceIdx)) {
             if(!bufferCleared) {
                 voiceSetBuffer(voices+voiceIdx, buffer, numSamples);
                 bufferCleared = true;
@@ -341,7 +373,14 @@ STATIC mp_obj_t audSetPhasePerTick(mp_obj_t voiceIdxObj, mp_obj_t phasePerTickOb
     uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
     uint32_t phasePerTick = mp_obj_get_int(phasePerTickObj);
 
-    voices[voiceIdx].phasePerTickFP = phasePerTick;
+    Voice* voice = voices + voiceIdx;
+    voice->phasePerTickFP = phasePerTick;
+
+    if(voices[voiceIdx].modulationType != MODULATION_NONE) {
+        Voice* modulator = getModulator(voice);
+        uint32_t freqFactor = voice->modulationFreqFactorFP;
+        modulator->phasePerTickFP = (phasePerTick >> 4) * freqFactor;
+    }
 
     return mp_obj_new_int(0);
 }
@@ -378,6 +417,30 @@ STATIC mp_obj_t audSetAmplitude(mp_obj_t voiceIdxObj, mp_obj_t amplitudeObj) {
 }
 
 //======================================================================================================
+// Set the modulation of the given voice
+// Modulation Tuple = (type(0 = None, 1 = linear), frequencyFactor(fixed point 12:4)
+//======================================================================================================
+STATIC mp_obj_t audSetModulation(mp_obj_t voiceIdxObj, mp_obj_t modulationTupleObj) {
+    uint8_t voiceIdx = mp_obj_get_int(voiceIdxObj);
+    mp_obj_tuple_t* modulationTuple = MP_OBJ_TO_PTR(modulationTupleObj);
+    
+    uint8_t modulationType = mp_obj_get_int( modulationTuple->items[0] );
+
+    uint16_t modulationFreqFactorFP = mp_obj_get_int( modulationTuple->items[1]);
+
+    uint16_t modulationAmplitude = mp_obj_get_int( modulationTuple->items[2]) << 8;
+
+    Voice* voice = voices+voiceIdx;
+
+    voice->modulationType = modulationType;
+    voice->modulationFreqFactorFP = modulationFreqFactorFP;
+
+    getModulator(voice)->baseAmplitude = modulationAmplitude;
+
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
 // Set the voice playing a new note
 //======================================================================================================
 STATIC mp_obj_t audPlayVoice(mp_obj_t voiceIdxObj) {
@@ -389,6 +452,13 @@ STATIC mp_obj_t audPlayVoice(mp_obj_t voiceIdxObj) {
     voice->state = STATE_ATTACK;
     if(voice->waveform == &noise) {
         noiseWaveformNextPhase = 0;
+    }
+
+    if(voice->modulationType != MODULATION_NONE) {
+        Voice* modulator = getModulator(voice);
+        modulator->phaseFP = 0;
+        modulator->prevEnvelopeFP = 0;
+        modulator->state = STATE_ATTACK;
     }
 
     return mp_obj_new_int(0);
@@ -414,6 +484,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(audInit_obj, audInit);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(audSynthFillBuffer_obj, audSynthFillBuffer);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetWaveform_obj, audSetWaveform);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetAmplitude_obj, audSetAmplitude);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetModulation_obj, audSetModulation);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetPhasePerTick_obj, audSetPhasePerTick);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetEnvelope_obj, audSetEnvelope);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(audPlayVoice_obj, audPlayVoice);
@@ -424,6 +495,7 @@ void mpy_audio_init() {
     mp_store_global(MP_QSTR_audSynthFillBuffer, MP_OBJ_FROM_PTR(&audSynthFillBuffer_obj));
     mp_store_global(MP_QSTR_audSetWaveform, MP_OBJ_FROM_PTR(&audSetWaveform_obj));
     mp_store_global(MP_QSTR_audSetAmplitude, MP_OBJ_FROM_PTR(&audSetAmplitude_obj));
+    mp_store_global(MP_QSTR_audSetModulation, MP_OBJ_FROM_PTR(&audSetModulation_obj));
     mp_store_global(MP_QSTR_audSetPhasePerTick, MP_OBJ_FROM_PTR(&audSetPhasePerTick_obj));
     mp_store_global(MP_QSTR_audSetEnvelope, MP_OBJ_FROM_PTR(&audSetEnvelope_obj));
     mp_store_global(MP_QSTR_audPlayVoice, MP_OBJ_FROM_PTR(&audPlayVoice_obj));
