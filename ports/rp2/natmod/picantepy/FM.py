@@ -51,8 +51,10 @@ def test():
 
         picante.setVoice(0, picante.WAVEFORM_SINE, (4, 8, 192, 32))
         picante.setVoice(1, picante.WAVEFORM_SINE, (0, 0, 64, 0))
-        picante.setModulation(0, picante.MODULATION_LINEAR, 4, 8)
-        #picante.setModulation(0, picante.MODULATION_EXPONENTIAL, 3, 64)
+        #picante.setModulation(0, picante.MODULATION_LINEAR, 4, 8)
+        picante.setModulation(0, picante.MODULATION_EXPONENTIAL, 3, 64)
+        #picante.setModulation(0, picante.MODULATION_LINEAR, 24, 4)
+        picante.setLowPassFilterLevel(3)
         picante.releaseNote(0)
         
         start = ticks_ms()

@@ -362,6 +362,14 @@ def setModulation(voiceIdx, modulationType, freqMultiplier, amplitude):
     audSetModulation(voiceIdx, (modulationType, freqMultiplierFP, amplitude))
 
 ####################################################################################
+# 
+# Sets the level of the low-pass filter
+#
+####################################################################################
+def setLowPassFilterLevel(filterLevel):
+    audSetLowPassLevel(filterLevel)
+
+####################################################################################
 #
 # starts playing a note (e.g. pressing a key on a keyboard)
 #   Note string is in range "A1" (55Hz) to "Ab7" (3322Hz)

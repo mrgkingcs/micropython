@@ -18,6 +18,8 @@ int16_t sineLUT[LUT_SIZE];
 int16_t (*waveformFuncs[NUM_WAVEFORMS])(uint16_t phase);
 uint32_t noiseWaveformState;
 uint16_t noiseWaveformNextPhase;
+uint16_t lowPassFilterLevel;
+int32_t lowPassFilterPrevOutput;
 
 Voice voices[NUM_VOICES];
 
@@ -162,7 +164,13 @@ void setupNoiseWaveformTable() {
     noiseWaveformNextPhase = 0;
 }
 
-
+//======================================================================================================
+// Set up the filter parameters
+//======================================================================================================
+void setupFilter() {
+    lowPassFilterLevel = 0;
+    lowPassFilterPrevOutput = 0;
+}
 
 //======================================================================================================
 //======================================================================================================
@@ -307,7 +315,19 @@ void voiceSetBuffer(Voice* voice, int16_t* buffer, uint16_t numSamples) {
     }
 }
 
+//======================================================================================================
+// Applies a simple low-pass filter to the sample buffer
+//======================================================================================================
+void applyLowPassFilter(int16_t* buffer, uint16_t numSamples) {
+    int16_t* currSample = buffer;
+    int16_t* beyondEnd = buffer+numSamples;
 
+    while(currSample < beyondEnd) {
+        lowPassFilterPrevOutput = lowPassFilterPrevOutput - (lowPassFilterPrevOutput>>lowPassFilterLevel) + *currSample;
+        *currSample = lowPassFilterPrevOutput >> lowPassFilterLevel;
+        ++currSample;
+    }
+}
 
 //======================================================================================================
 //======================================================================================================
@@ -356,6 +376,8 @@ STATIC mp_obj_t audSynthFillBuffer(mp_obj_t bufferObj) {
         while(dst < beyondEnd) {
             *(dst++) = 0;
         }
+    } else if(lowPassFilterLevel > 0) {
+        applyLowPassFilter(buffer, numSamples);
     }
     return mp_obj_new_int(0);
 }
@@ -449,6 +471,14 @@ STATIC mp_obj_t audSetModulation(mp_obj_t voiceIdxObj, mp_obj_t modulationTupleO
 }
 
 //======================================================================================================
+// Set the level of low-pass filtering
+//======================================================================================================
+STATIC mp_obj_t audSetLowPassLevel(mp_obj_t filterLevel) {
+    lowPassFilterLevel = mp_obj_get_int(filterLevel);
+    return mp_obj_new_int(0);
+}
+
+//======================================================================================================
 // Set the voice playing a new note
 //======================================================================================================
 STATIC mp_obj_t audPlayVoice(mp_obj_t voiceIdxObj) {
@@ -493,6 +523,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(audSynthFillBuffer_obj, audSynthFillBuffer);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetWaveform_obj, audSetWaveform);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetAmplitude_obj, audSetAmplitude);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetModulation_obj, audSetModulation);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(audSetLowPassLevel_obj, audSetLowPassLevel);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetPhasePerTick_obj, audSetPhasePerTick);
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(audSetEnvelope_obj, audSetEnvelope);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(audPlayVoice_obj, audPlayVoice);
@@ -504,6 +535,7 @@ void mpy_audio_init() {
     mp_store_global(MP_QSTR_audSetWaveform, MP_OBJ_FROM_PTR(&audSetWaveform_obj));
     mp_store_global(MP_QSTR_audSetAmplitude, MP_OBJ_FROM_PTR(&audSetAmplitude_obj));
     mp_store_global(MP_QSTR_audSetModulation, MP_OBJ_FROM_PTR(&audSetModulation_obj));
+    mp_store_global(MP_QSTR_audSetLowPassLevel, MP_OBJ_FROM_PTR(&audSetLowPassLevel_obj));
     mp_store_global(MP_QSTR_audSetPhasePerTick, MP_OBJ_FROM_PTR(&audSetPhasePerTick_obj));
     mp_store_global(MP_QSTR_audSetEnvelope, MP_OBJ_FROM_PTR(&audSetEnvelope_obj));
     mp_store_global(MP_QSTR_audPlayVoice, MP_OBJ_FROM_PTR(&audPlayVoice_obj));
