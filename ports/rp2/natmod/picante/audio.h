@@ -53,6 +53,7 @@
 
 #define MODULATION_NONE (0)
 #define MODULATION_LINEAR (1)
+#define MODULATION_EXPONENTIAL (2)
 
 //======================================================================================================
 //  Structure to hold current state of a synth voice

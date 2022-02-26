@@ -265,6 +265,14 @@ int16_t voiceGetSample(Voice* voice) {
         if (phaseDeltaFP > 0) {
             voice->phaseFP += ((uint32_t)phaseDeltaFP) << 1;
         }
+    } else if (voice->modulationType == MODULATION_EXPONENTIAL) {
+        Voice* modulator = getModulator(voice);
+        int32_t modulatorSampleFP = ((int32_t)voiceGetSample(modulator));
+        int32_t signedPhasePerTickFP = voice->phasePerTickFP >> 1;
+        int32_t phaseDeltaFP = (signedPhasePerTickFP>>4) * modulatorSampleFP;
+        if (phaseDeltaFP > 0) {
+            voice->phaseFP += ((uint32_t)phaseDeltaFP) << 1;
+        }
     }
 
     sample *= voice->baseAmplitude;
